@@ -1,0 +1,54 @@
+body:
+  - attributes:
+      value: |
+        Some general tips:
+
+        * Is this really a problem?
+        * Is this a problem here?
+    type: markdown
+  - attributes:
+      label: Initial checklist
+      options:
+        - label: I read the [contributing guide](https://github.com/tarolling/seiri/blob/main/CONTRIBUTING.md)
+          required: true
+        - label: I agree to follow the [Code of Conduct](https://github.com/tarolling/seiri/blob/main/CODE_OF_CONDUCT.md)
+          required: true
+        - label: I searched [issues](https://github.com/tarolling/seiri/issues) and [discussions](https://github.com/tarolling/seiri/discussions) and couldn't find anything (or linked relevant results below)
+          required: true
+    id: initial-checklist
+    type: checkboxes
+  - attributes:
+      description: |
+        Please describe the problem.
+
+        Forget about the particular solution you have in mind.
+        Solution time is later!
+
+        What is missing? What are the use cases?
+        Describe which use cases are important and which are nice to have.
+        Convince the maintainers that there is a real problem.
+      label: Problem
+    id: problem
+    type: textarea
+    validations:
+      required: true
+  - attributes:
+      description: |
+        Are there existing solutions?
+        Can these use cases be addressed already?
+      label: Current solutions
+    id: alternatives
+    type: textarea
+    validations:
+      required: true
+  - attributes:
+      description: |
+        What is a better solution?
+        Why is that better than current solutions at addressing the use cases?
+      label: Proposed solutions
+    id: solution
+    type: textarea
+    validations:
+      required: true
+description: Suggest an idea
+name: 🚀 Feature

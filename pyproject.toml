@@ -6,7 +6,11 @@ description = "A project visualization tool"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "matplotlib>=3.10.3",
+    "networkx[default]>=3.5",
+    "pathspec>=0.12.1",
     "pre-commit>=4.2.0",
+    "pyqt6>=6.9.1",
 ]
 
 [dependency-groups]

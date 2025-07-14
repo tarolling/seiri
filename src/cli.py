@@ -3,63 +3,154 @@
 
 import argparse
 import json
-import tkinter as tk
 from pathlib import Path
 
-from python import ast_parser, graph_builder
+import pathspec
+
+from core.graph_builder import GraphBuilder
+from core.visualizer import GraphVisualizer
+from parsers.registry import ParserRegistry
 
 
-def visualize_graph(graph_data: dict):
-    root = tk.Tk()
-    root.title("Seiri - Project Visualizer")
-    canvas = tk.Canvas(root, width=800, height=600)
-    canvas.pack()
+def find_files_by_extensions(path: str, extensions: list[str]) -> list[str]:
+    """Find all files with specified extensions in a directory."""
+    patterns = [f"*.{ext}" for ext in extensions]
+    files = []
 
-    # Calculate and store node positions
-    node_positions = {}
-    for i, node in enumerate(graph_data["nodes"]):
-        x, y = 100 + (i % 3) * 200, 100 + (i // 3) * 150
-        node_positions[node["id"]] = (x, y)
-        canvas.create_oval(x - 20, y - 20, x + 20, y + 20, fill="lightblue")
-        canvas.create_text(x, y + 30, text=node["id"])
-
-    for edge in graph_data["edges"]:
-        src_x, src_y = node_positions[edge["source"]]
-        dst_x, dst_y = node_positions[edge["target"]]
-        canvas.create_line(src_x, src_y, dst_x, dst_y, width=2)
-
-    root.mainloop()
-
-
-def find_python_files(path: str) -> list:
-    """Recursively find all .py files in a directory."""
-    return [
-        str(p)
-        for p in Path(path).rglob("*.py")
-        if (
-            p.is_file()
-            and not p.name.startswith("__")
-            and "site-packages" not in p.parts
-            and "venv" not in p.parts
-            and ".venv" not in p.parts
-            and "env" not in p.parts
+    for pattern in patterns:
+        files.extend(
+            [
+                str(p)
+                for p in Path(path).rglob(pattern)
+                if (
+                    p.is_file()
+                    and not any(
+                        exclude in p.parts
+                        for exclude in [
+                            "__pycache__",
+                            "site-packages",
+                            "venv",
+                            ".venv",
+                            "env",
+                            "node_modules",
+                            ".git",
+                            "target",
+                            "build",
+                        ]
+                    )
+                    and not p.name.startswith(".")
+                )
+            ]
         )
-    ]
+
+    return files
+
+
+def detect_project_languages(path: str) -> list[str]:
+    """Detect programming languages in the project."""
+
+    language_indicators = {
+        "python": ["*.py", "requirements.txt", "pyproject.toml", "setup.py"],
+        "javascript": ["*.js", "package.json", "*.ts", "tsconfig.json"],
+        "rust": ["*.rs", "Cargo.toml"],
+        "go": ["*.go", "go.mod"],
+        "java": ["*.java", "pom.xml", "build.gradle"],
+        "cpp": ["*.cpp", "*.hpp", "*.c", "*.h", "CMakelists.txt"],
+    }
+
+    detected = []
+    project_path = Path(path)
+
+    # Load gitignore patterns if present
+    gitignore_path = project_path / ".gitignore"
+    if gitignore_path.exists():
+        with open(gitignore_path) as f:
+            spec = pathspec.PathSpec.from_lines("gitwildmatch", f)
+    else:
+        spec = None
+
+    for lang, indicators in language_indicators.items():
+        for indicator in indicators:
+            matches = list(project_path.rglob(indicator))
+            if spec:
+                matches = [
+                    m
+                    for m in matches
+                    if not spec.match_file(str(m.relative_to(project_path)))
+                ]
+            if matches:
+                print(f"detected {lang} in {matches}")
+                detected.append(lang)
+                break
+
+    return detected
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--path", help="Path to Python project")
+    parser = argparse.ArgumentParser(
+        description="Seiri - Language-agnostic project visualizer"
+    )
+    parser.add_argument("--path", required=True, help="Path to project")
+    parser.add_argument(
+        "--language", help="Specify language (auto-detect if not provided)"
+    )
+    parser.add_argument("--output", help="Output JSON file path")
+    parser.add_argument(
+        "--visualize", action="store_true", help="Show GUI visualization"
+    )
     args = parser.parse_args()
 
-    python_files = find_python_files(args.path)
-    parse_results = {}
-    for file in python_files:
-        parse_results[file] = ast_parser.parse_python_file(file)
+    # Initialize registry and load parsers
+    registry = ParserRegistry()
 
-    graph_data = graph_builder.build_graph(parse_results)
-    visualize_graph(graph_data)
-    print(json.dumps(graph_data))  # TODO: convert to graph JSON
+    # Detect or use specified language
+    if args.language:
+        languages = [args.language]
+    else:
+        languages = detect_project_languages(args.path)
+        if not languages:
+            print("No supported languages detected in project")
+            return
+
+    print(f"Detected languages: {', '.join(languages)}")
+
+    # Parse files for each language
+    all_parse_results = {}
+    for language in languages:
+        parser_class = registry.get_parser(language)
+        if not parser_class:
+            print(f"No parser available for {language}")
+            continue
+
+        parser = parser_class()
+        extensions = parser.get_file_extensions()
+        files = find_files_by_extensions(args.path, extensions)
+
+        print(f"Found {len(files)} {language} files")
+
+        for file in files:
+            try:
+                result = parser.parse_file(file)
+                all_parse_results[file] = {"language": language, "data": result}
+            except Exception as e:
+                print(f"Error parsing {file}: {e}")
+
+    # Build graph
+    graph_builder = GraphBuilder()
+    graph_data = graph_builder.build_graph(all_parse_results)
+
+    # Output JSON
+    if args.output:
+        with open(args.output, "w") as f:
+            json.dump(graph_data, f, indent=2)
+        print(f"Graph data saved to {args.output}")
+    else:
+        print(json.dumps(graph_data, indent=2))
+
+    # Visualize if requested
+    if args.visualize:
+        visualizer = GraphVisualizer()
+        visualizer.visualize(graph_data)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,84 @@
+body:
+  - attributes:
+      value: |
+        Some general tips:
+
+        * Is this really a problem?
+        * Is this a problem here?
+        * Can this be solved in a different way?
+        * Can this be contributed as a PR with a failing test instead?
+    type: markdown
+  - attributes:
+      label: Initial checklist
+      options:
+        - label: I read the [contributing guide](https://github.com/tarolling/seiri/blob/main/CONTRIBUTING.md)
+          required: true
+        - label: I agree to follow the [Code of Conduct](https://github.com/tarolling/seiri/blob/main/CODE_OF_CONDUCT.md)
+          required: true
+        - label: I searched [issues](https://github.com/tarolling/seiri/issues) and [discussions](https://github.com/tarolling/seiri/discussions) and couldn't find anything (or linked relevant results below)
+          required: true
+    id: initial-checklist
+    type: checkboxes
+  - attributes:
+      description: |
+        Which packages cause the failure?
+        Please test using latest versions.
+        Example: `some-package@1.2.3`.
+      label: Affected package
+    id: affected-versions
+    type: input
+    validations:
+      required: true
+  - attributes:
+      description: |
+        How did this happen?
+
+        Provide a [minimal and reproducible example](https://stackoverflow.com/help/minimal-reproducible-example).
+        Link to a repository or sandbox or show the code here.
+        Remove everything that is not needed.
+      label: Steps to reproduce
+    id: steps-to-reproduce
+    type: textarea
+    validations:
+      required: true
+  - attributes:
+      description: |
+        What happens?
+        What is wrong with the current behavior?
+      label: Actual behavior
+    id: actual-behavior
+    type: textarea
+    validations:
+      required: true
+  - attributes:
+      description: |
+        What should happen instead?
+        Why should that happen?
+        Why is that better than the current behavior?
+      label: Expected behavior
+    id: expected-behavior
+    type: textarea
+    validations:
+      required: true
+  - attributes:
+      label: Version
+      description: |
+        What Python version are you using?
+        Please test using specified versions.
+        Example: `node@23.2.0` or `Chrome 131.0.6778.86`.
+    id: runtime
+    type: input
+    validations:
+      required: false
+  - attributes:
+      description: |
+        What operating system are you using?
+        Please test using latest versions.
+        Example: `macOS Sequoia 15.1.1`.
+      label: Operating system
+    id: operating-system
+    type: input
+    validations:
+      required: false
+description: Report a bug
+name: 🐛 Bug
