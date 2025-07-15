@@ -1,7 +1,4 @@
-# This workflow will install Python dependencies, run tests and lint with a single version of Python
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
-
-name: Python application
+name: Build
 
 on:
   push:
@@ -18,17 +15,25 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+
     - name: Install uv
       uses: astral-sh/setup-uv@v6
       with:
         version: "0.7.21"
-    - name: Set up Python 3.13
-      uses: actions/setup-python@v3
+
+    - name: Set up Python 3.13.5
+      uses: actions/setup-python@v5
       with:
-        python-version: "3.13"
+        python-version-file: ".python-version"
+
     - name: Install dependencies
       run: |
-        uv sync
+        uv sync --locked --all-extras --dev
+
     - name: Lint with ruff
       run: |
         uv run ruff check .
+
+    - name: Build with uv
+      run: |
+        uv run build
