@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pathspec
 
-from core.graph_builder import GraphBuilder
-from core.visualizer import GraphVisualizer
-from parsers.registry import ParserRegistry
+from .core.graph_builder import GraphBuilder
+from .core.visualizer import GraphVisualizer
+from .parsers.registry import ParserRegistry
 
 
 def find_files_by_extensions(path: str, extensions: list[str]) -> list[str]:
@@ -100,14 +100,17 @@ def main():
     )
     args = parser.parse_args()
 
-    # Initialize registry and load parsers
     registry = ParserRegistry()
+
+    # validate path as directory
+    project_path = Path(args.path).resolve()
+    assert project_path.is_dir(), f"Error: {project_path} is not a valid directory"
 
     # Detect or use specified language
     if args.language:
         languages = [args.language]
     else:
-        languages = detect_project_languages(args.path)
+        languages = detect_project_languages(project_path)
         if not languages:
             print("No supported languages detected in project")
             return
