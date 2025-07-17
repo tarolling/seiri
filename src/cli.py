@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pathspec
 
-from .core.graph_builder import GraphBuilder
-from .core.visualizer import GraphVisualizer
-from .parsers.registry import ParserRegistry
+from core.graph_builder import GraphBuilder
+from core.visualizer import GraphVisualizer
+from parsers.registry import ParserRegistry
 
 
 def find_files_by_extensions(path: str, extensions: list[str]) -> list[str]:
@@ -71,15 +71,26 @@ def detect_project_languages(path: str) -> list[str]:
 
     for lang, indicators in language_indicators.items():
         for indicator in indicators:
-            matches = list(project_path.rglob(indicator))
+            if project_path.is_file():
+                if project_path.match(indicator, case_sensitive=True):
+                    print(f"Detected {lang} in {project_path}")
+                    detected.append(lang)
+                    break
+
+            matches = list(
+                project_path.rglob(
+                    indicator, case_sensitive=True, recurse_symlinks=True
+                )
+            )
             if spec:
                 matches = [
                     m
                     for m in matches
                     if not spec.match_file(str(m.relative_to(project_path)))
                 ]
+
             if matches:
-                print(f"detected {lang} in {matches}")
+                print(f"Detected {lang} in {matches}")
                 detected.append(lang)
                 break
 
@@ -104,13 +115,12 @@ def main():
 
     # validate path as directory
     project_path = Path(args.path).resolve()
-    assert project_path.is_dir(), f"Error: {project_path} is not a valid directory"
 
     # Detect or use specified language
     if args.language:
         languages = [args.language]
     else:
-        languages = detect_project_languages(project_path)
+        languages = detect_project_languages(str(project_path))
         if not languages:
             print("No supported languages detected in project")
             return
