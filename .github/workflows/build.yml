@@ -1,4 +1,4 @@
-name: Build
+name: Build and Test
 
 on:
   push:
@@ -37,3 +37,8 @@ jobs:
     - name: Build with uv
       run: |
         uv build
+
+    - name: Run tests with pytest
+      run: |
+        export CI=true
+        uv run pytest -v --cov=src --cov-report=term-missing tests/
