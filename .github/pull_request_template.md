@@ -17,7 +17,7 @@
 * [ ] I read the support docs
 * [ ] I read the contributing guide
 * [ ] I agree to follow the code of conduct
-* [ ] I searched issues and discussions and couldn’t find anything or linked relevant results belowgithub.com/orgs/remarkjs/discussions -->
+* [ ] I searched issues and discussions and couldn’t find anything or linked relevant results below
 * [ ] I made sure the docs are up to date
 * [ ] I included tests (or that’s not needed)
 
