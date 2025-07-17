@@ -1,4 +1,4 @@
-name: Build and Test
+name: Test
 
 on:
   push:
@@ -34,11 +34,8 @@ jobs:
       run: |
         uv run ruff check .
 
-    - name: Build with uv
-      run: |
-        uv build
-
     - name: Run tests with pytest
       run: |
+        uv pip install -e .
         export CI=true
         uv run pytest -v --cov=src --cov-report=term-missing tests/
