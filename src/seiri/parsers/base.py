@@ -2,14 +2,15 @@
 # -*- coding: utf-8 -*-
 
 from abc import ABC, abstractmethod
-from typing import Any
+
+from seiri.parsers.utils.datatypes import ParsedFile
 
 
 class BaseParser(ABC):
     """Base class for language parsers."""
 
     @abstractmethod
-    def parse_file(self, filepath: str) -> dict[str, Any]:
+    def parse_file(self, filepath: str) -> ParsedFile:
         """Parse a file and return structured data."""
         pass
 

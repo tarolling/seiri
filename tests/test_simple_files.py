@@ -4,8 +4,9 @@
 import os
 from pathlib import Path
 
-from src.cli import detect_project_languages
-from src.parsers.registry import ParserRegistry
+from seiri.cli import detect_project_languages
+from seiri.parsers.utils.datatypes import ContainerNode, FunctionNode
+from seiri.parsers.utils.registry import ParserRegistry
 
 
 def test_simple_file_1():
@@ -20,13 +21,24 @@ def test_simple_file_1():
     assert parser_class is not None, "Parser should not be None"
 
     parser = parser_class()
-    ast = parser.parse_file(str(test_file))
-    assert ast is not None, "AST should not be None"
+    try:
+        parsed_file = parser.parse_file(str(test_file))
+    except FileNotFoundError:
+        assert False, "Test file should exist"
 
-    assert "NumberProcessor" in ast["classes"], "AST should contain 'NumberProcessor'"
-    assert "generate_random_list" in ast["functions"], (
-        "AST should contain 'generate_random_list'"
-    )
-    assert "sum_even_numbers" in ast["functions"], (
-        "AST should contain 'sum_even_numbers'"
-    )
+    assert (
+        ContainerNode(name="NumberProcessor", bases=[], container_vars=[])
+        in parsed_file.containers
+    ), "Parse result should contain 'NumberProcessor'"
+    assert (
+        FunctionNode(
+            name="generate_random_list", args=["size"], decorators=[], is_async=False
+        )
+        in parsed_file.functions
+    ), "Parse result should contain 'generate_random_list'"
+    assert (
+        FunctionNode(
+            name="sum_even_numbers", args=["numbers"], decorators=[], is_async=False
+        )
+        in parsed_file.functions
+    ), "Parse result should contain 'sum_even_numbers'"
