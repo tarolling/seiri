@@ -6,21 +6,9 @@ import tkinter as tk
 from pathlib import Path
 from typing import Any
 
-# Try to import visualization libraries
-try:
-    import matplotlib.patches as patches
-    import matplotlib.pyplot as plt
-
-    HAS_MATPLOTLIB = True
-except ImportError:
-    HAS_MATPLOTLIB = False
-
-try:
-    import networkx as nx
-
-    HAS_NETWORKX = True
-except ImportError:
-    HAS_NETWORKX = False
+import matplotlib.patches as patches
+import matplotlib.pyplot as plt
+import networkx as nx
 
 
 class GraphVisualizer:
@@ -47,16 +35,8 @@ class GraphVisualizer:
 
     def visualize(self, graph_data: dict[str, Any]):
         """Create and display the graph visualization."""
-        if not HAS_MATPLOTLIB:
-            print("Matplotlib not available. Install with: pip install matplotlib")
-            self._text_visualize(graph_data)
-            return
-
         try:
-            if HAS_NETWORKX:
-                self._networkx_visualize(graph_data)
-            else:
-                self._matplotlib_visualize(graph_data)
+            self._networkx_visualize(graph_data)
         except Exception as e:
             print(f"GUI visualization failed: {e}")
             print("Falling back to text-based visualization...")
@@ -64,7 +44,6 @@ class GraphVisualizer:
 
     def _networkx_visualize(self, graph_data: dict[str, Any]):
         """Use NetworkX for advanced graph layout."""
-        # Create NetworkX graph
         G = nx.DiGraph()
 
         for node in graph_data["nodes"]:
@@ -96,8 +75,8 @@ class GraphVisualizer:
             base_size = 500
             if "function_count" in metadata:
                 base_size += metadata["function_count"] * 50
-            if "class_count" in metadata:
-                base_size += metadata["class_count"] * 100
+            if "container_count" in metadata:
+                base_size += metadata["container_count"] * 100
             node_sizes.append(min(base_size, 2000))
 
         # Draw edges by type

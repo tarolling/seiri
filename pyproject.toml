@@ -1,6 +1,6 @@
 [project]
 name = "seiri"
-authors = [{ "name" = "tarolling" }]
+authors = [{ "name" = "tarolling", email = "bjoensy16@outlook.com" }]
 version = "0.0.1"
 description = "A project visualization tool"
 readme = "README.md"
@@ -9,9 +9,17 @@ dependencies = [
     "matplotlib>=3.10.3",
     "networkx[default]>=3.5",
     "pathspec>=0.12.1",
-    "pre-commit>=4.2.0",
     "pyqt6>=6.9.1",
+    "pytest-cov>=6.2.1",
 ]
 
+
 [dependency-groups]
-dev = ["ruff>=0.12.3"]
+dev = ["pre-commit>=4.2.0", "pytest>=8.4.1", "ruff>=0.12.3"]
+
+[project.scripts]
+test = "seiri:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

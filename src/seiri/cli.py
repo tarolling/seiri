@@ -7,9 +7,10 @@ from pathlib import Path
 
 import pathspec
 
-from core.graph_builder import GraphBuilder
-from core.visualizer import GraphVisualizer
-from parsers.registry import ParserRegistry
+from seiri.core.graph_builder import GraphBuilder
+from seiri.core.visualizer import GraphVisualizer
+from seiri.parsers.utils.datatypes import ParsedFile
+from seiri.parsers.utils.registry import ParserRegistry
 
 
 def find_files_by_extensions(path: str, extensions: list[str]) -> list[str]:
@@ -71,15 +72,26 @@ def detect_project_languages(path: str) -> list[str]:
 
     for lang, indicators in language_indicators.items():
         for indicator in indicators:
-            matches = list(project_path.rglob(indicator))
+            if project_path.is_file():
+                if project_path.match(indicator, case_sensitive=True):
+                    print(f"Detected {lang} in {project_path}")
+                    detected.append(lang)
+                    break
+
+            matches = list(
+                project_path.rglob(
+                    indicator, case_sensitive=True, recurse_symlinks=True
+                )
+            )
             if spec:
                 matches = [
                     m
                     for m in matches
                     if not spec.match_file(str(m.relative_to(project_path)))
                 ]
+
             if matches:
-                print(f"detected {lang} in {matches}")
+                print(f"Detected {lang} in {matches}")
                 detected.append(lang)
                 break
 
@@ -100,14 +112,16 @@ def main():
     )
     args = parser.parse_args()
 
-    # Initialize registry and load parsers
     registry = ParserRegistry()
+
+    # validate path as directory
+    project_path = Path(args.path).resolve()
 
     # Detect or use specified language
     if args.language:
         languages = [args.language]
     else:
-        languages = detect_project_languages(args.path)
+        languages = detect_project_languages(str(project_path))
         if not languages:
             print("No supported languages detected in project")
             return
@@ -115,7 +129,7 @@ def main():
     print(f"Detected languages: {', '.join(languages)}")
 
     # Parse files for each language
-    all_parse_results = {}
+    all_parse_results: list[ParsedFile] = []
     for language in languages:
         parser_class = registry.get_parser(language)
         if not parser_class:
@@ -131,7 +145,7 @@ def main():
         for file in files:
             try:
                 result = parser.parse_file(file)
-                all_parse_results[file] = {"language": language, "data": result}
+                all_parse_results.append(result)
             except Exception as e:
                 print(f"Error parsing {file}: {e}")
 
