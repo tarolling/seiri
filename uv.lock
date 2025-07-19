@@ -587,7 +587,7 @@ wheels = [
 [[package]]
 name = "seiri"
 version = "0.0.1"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "matplotlib" },
     { name = "networkx", extra = ["default"] },

@@ -2,29 +2,28 @@
 # -*- coding: utf-8 -*-
 
 import re
-from typing import Any
+from pathlib import Path
 
-from .base import BaseParser
+from seiri.parsers.base import BaseParser
+from seiri.parsers.utils.datatypes import ParsedFile
 
 
-class JavascriptParser(BaseParser):
+class JavaScriptParser(BaseParser):
     """Simple regex-based parser for JavaScript files."""
 
     def get_file_extensions(self) -> list[str]:
         return ["js", "ts", "jsx", "tsx"]
 
-    def parse_file(self, filepath: str) -> dict[str, Any]:
+    def parse_file(self, filepath: str) -> ParsedFile:
         """Parse JavaScript file using regex patterns."""
+        if not Path(filepath).exists():
+            raise FileNotFoundError(f"File does not exist: {filepath}")
+
         try:
             with open(filepath, "r", encoding="utf-8") as fp:
                 content = fp.read()
         except UnicodeDecodeError:
-            return {
-                "error": "Encoding error",
-                "imports": [],
-                "functions": [],
-                "classes": [],
-            }
+            return ParsedFile("error", Path(filepath))
 
         # Find imports
         import_patterns = [

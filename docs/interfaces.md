@@ -3,12 +3,10 @@
 Parser to graph builder:
 
 - Imports
-- References
-  - Functions
-  - Classes
-- Definitions
-  - Functions
-  - Classes
+- Function definitions
+- Function references
+- Container definitions (classes, structs, etc.)
+- Container references
 
 ## Nodes
 
@@ -16,26 +14,24 @@ Parser to graph builder:
 
 |Field|Type|Description|
 |-----|----|-----------|
-|path|str|Relative path of file performing the import|
-|type|str|Either `import` or `from_import`|
-|module|str|Name of module|
-|alias|str|Import alias of module|
-|line|int|Line number of import statement|
+|module|`str`|Name of module importing from|
+|name|`str`|Name of module being imported|
+|alias|`str`|Import alias of module|
+|level|`int`|Relative level of import, with 0 being absolute import|
 
 #### Example
 
 ```py
-import math as ma
+from functools import partial as par
 ```
 
 is equivalent to
 
 ```py
 {
-  "path": "example.py",
-  "type": "import",
-  "module": "math",
-  "alias": "ma",
-  "line": 1
+  "module": "functools",
+  "name": "partial
+  "alias": "par",
+  "level": 0
 }
 ```

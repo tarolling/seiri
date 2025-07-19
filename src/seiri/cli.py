@@ -7,9 +7,10 @@ from pathlib import Path
 
 import pathspec
 
-from core.graph_builder import GraphBuilder
-from core.visualizer import GraphVisualizer
-from parsers.registry import ParserRegistry
+from seiri.core.graph_builder import GraphBuilder
+from seiri.core.visualizer import GraphVisualizer
+from seiri.parsers.utils.datatypes import ParsedFile
+from seiri.parsers.utils.registry import ParserRegistry
 
 
 def find_files_by_extensions(path: str, extensions: list[str]) -> list[str]:
@@ -128,7 +129,7 @@ def main():
     print(f"Detected languages: {', '.join(languages)}")
 
     # Parse files for each language
-    all_parse_results = {}
+    all_parse_results: list[ParsedFile] = []
     for language in languages:
         parser_class = registry.get_parser(language)
         if not parser_class:
@@ -144,7 +145,7 @@ def main():
         for file in files:
             try:
                 result = parser.parse_file(file)
-                all_parse_results[file] = {"language": language, "data": result}
+                all_parse_results.append(result)
             except Exception as e:
                 print(f"Error parsing {file}: {e}")
 

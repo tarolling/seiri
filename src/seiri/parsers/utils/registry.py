@@ -3,10 +3,10 @@
 
 from typing import Optional, Type
 
-from .base import BaseParser
-from .javascript import JavascriptParser
-from .python import PythonParser
-from .rust import RustParser
+from seiri.parsers.base import BaseParser
+from seiri.parsers.javascript import JavaScriptParser
+from seiri.parsers.python import PythonParser
+from seiri.parsers.rust import RustParser
 
 
 class ParserRegistry:
@@ -27,5 +27,5 @@ class ParserRegistry:
     def _load_builtin_parsers(self):
         """Load built-in parsers."""
         self.register_parser("python", PythonParser)
-        self.register_parser("javascript", JavascriptParser)
+        self.register_parser("javascript", JavaScriptParser)
         self.register_parser("rust", RustParser)
