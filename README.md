@@ -21,7 +21,7 @@ bash ./scripts/setup.sh
 Provide a path to the project you want to analyze, and optionally specify to produce a visualization and/or a JSON file containing all extract information.
 
 ```sh
-python src/cli.py --path ./tests/examples/project_a/ --visualize --output output.json
+python src/seiri/cli.py --path ./tests/examples/project_a/ --visualize --output output.json
 ```
 
 ## Capabilities
