@@ -50,7 +50,9 @@ class GraphVisualizer:
             G.add_node(node["id"], **node)
 
         for edge in graph_data["edges"]:
-            if edge["source"] in G.nodes and edge["target"] in G.nodes:
+            src: str = edge["source"]
+            target: str = edge["target"]
+            if src in G.nodes and target in G.nodes:
                 G.add_edge(edge["source"], edge["target"], **edge)
 
         plt.figure(figsize=(16, 12))
@@ -204,6 +206,57 @@ class GraphVisualizer:
 
         plt.tight_layout()
         plt.show()
+
+    def _text_visualize(self, graph_data: dict[str, Any]):
+        """Text-based visualization as fallback."""
+        print("\n" + "=" * 60)
+        print("SEIRI - PROJECT STRUCTURE VISUALIZATION")
+        print("=" * 60)
+
+        metadata = graph_data.get("metadata", {})
+        print(f"Total files: {metadata.get('total_files', 0)}")
+        print(f"Languages: {', '.join(metadata.get('languages', []))}")
+        print(f"Nodes: {len(graph_data['nodes'])}, Edges: {len(graph_data['edges'])}")
+
+        # Group nodes by type
+        file_nodes = [n for n in graph_data["nodes"] if n["type"] == "file"]
+        external_nodes = [n for n in graph_data["nodes"] if n["type"] == "external"]
+
+        print(f"\nFILE NODES ({len(file_nodes)}):")
+        print("-" * 40)
+        for node in file_nodes:
+            lang = node.get("language", "unknown")
+            metadata = node.get("metadata", {})
+            meta_str = ", ".join([f"{k}: {v}" for k, v in metadata.items()])
+            print(
+                f"  📄 {node['name']} ({lang})" + (f" - {meta_str}" if meta_str else "")
+            )
+
+        if external_nodes:
+            print(f"\nEXTERNAL DEPENDENCIES ({len(external_nodes)}):")
+            print("-" * 40)
+            for node in external_nodes:
+                print(f"  📦 {node['name']}")
+
+        # Show dependencies
+        print(f"\nDEPENDENCIES ({len(graph_data['edges'])}):")
+        print("-" * 40)
+        for edge in graph_data["edges"]:
+            edge_type = edge["type"]
+            symbol = "→" if edge_type == "import" else "↗"
+            source_name = (
+                Path(edge["source"]).name
+                if edge["source"] in [n["id"] for n in file_nodes]
+                else edge["source"]
+            )
+            target_name = (
+                Path(edge["target"]).name
+                if edge["target"] in [n["id"] for n in file_nodes]
+                else edge["target"]
+            )
+            print(f"  {source_name} {symbol} {target_name} ({edge_type})")
+
+        print("\n" + "=" * 60)
 
     def _layout_nodes(self, nodes: list[dict]) -> dict[str, tuple]:
         """Calculate node positions using a simple grid layout."""
