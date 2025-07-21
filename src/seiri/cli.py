@@ -107,9 +107,6 @@ def main():
         "--language", help="Specify language (auto-detect if not provided)"
     )
     parser.add_argument("--output", help="Output JSON file path")
-    parser.add_argument(
-        "--visualize", action="store_true", help="Show GUI visualization"
-    )
     args = parser.parse_args()
 
     registry = ParserRegistry()
@@ -158,13 +155,9 @@ def main():
         with open(args.output, "w") as f:
             json.dump(graph_data, f, indent=2)
         print(f"Graph data saved to {args.output}")
-    else:
-        print(json.dumps(graph_data, indent=2))
 
-    # Visualize if requested
-    if args.visualize:
-        visualizer = GraphVisualizer()
-        visualizer.visualize(graph_data)
+    visualizer = GraphVisualizer()
+    visualizer.visualize(graph_data)
 
 
 if __name__ == "__main__":

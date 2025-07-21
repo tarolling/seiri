@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 
 
-from pathlib import Path
 from typing import Any
 
 from seiri.parsers.utils.datatypes import ImportNode, ParsedFile
@@ -23,7 +22,11 @@ class GraphBuilder:
 
             nodes.append(
                 {
-                    "id": str(filepath),
+                    "id": str(filepath)
+                    .replace("/", ".")
+                    .replace("\\", ".")
+                    .removeprefix("src.")
+                    .removesuffix(".py"),
                     "type": "file",
                     "language": language,
                     "name": filepath.name,
@@ -38,7 +41,11 @@ class GraphBuilder:
                 if imp:  # Skip None imports
                     edges.append(
                         {
-                            "source": str(parsed_file.path),
+                            "source": str(parsed_file.path)
+                            .replace("/", ".")
+                            .replace("\\", ".")
+                            .removeprefix("src.")
+                            .removesuffix(".py"),
                             "target": imp.module,
                             "type": "import",
                             "weight": 1,
@@ -50,7 +57,11 @@ class GraphBuilder:
                 if call:
                     edges.append(
                         {
-                            "source": str(parsed_file.path),
+                            "source": str(parsed_file.path)
+                            .replace("/", ".")
+                            .replace("\\", ".")
+                            .removeprefix("src.")
+                            .removesuffix(".py"),
                             "target": call.object,
                             "type": "call",
                             "weight": 1,
@@ -96,54 +107,3 @@ class GraphBuilder:
                 external_deps.add(target.module)
 
         return list(external_deps)
-
-    def _text_visualize(self, graph_data: dict[str, Any]):
-        """Text-based visualization as fallback."""
-        print("\n" + "=" * 60)
-        print("SEIRI - PROJECT STRUCTURE VISUALIZATION")
-        print("=" * 60)
-
-        metadata = graph_data.get("metadata", {})
-        print(f"Total files: {metadata.get('total_files', 0)}")
-        print(f"Languages: {', '.join(metadata.get('languages', []))}")
-        print(f"Nodes: {len(graph_data['nodes'])}, Edges: {len(graph_data['edges'])}")
-
-        # Group nodes by type
-        file_nodes = [n for n in graph_data["nodes"] if n["type"] == "file"]
-        external_nodes = [n for n in graph_data["nodes"] if n["type"] == "external"]
-
-        print(f"\nFILE NODES ({len(file_nodes)}):")
-        print("-" * 40)
-        for node in file_nodes:
-            lang = node.get("language", "unknown")
-            metadata = node.get("metadata", {})
-            meta_str = ", ".join([f"{k}: {v}" for k, v in metadata.items()])
-            print(
-                f"  📄 {node['name']} ({lang})" + (f" - {meta_str}" if meta_str else "")
-            )
-
-        if external_nodes:
-            print(f"\nEXTERNAL DEPENDENCIES ({len(external_nodes)}):")
-            print("-" * 40)
-            for node in external_nodes:
-                print(f"  📦 {node['name']}")
-
-        # Show dependencies
-        print(f"\nDEPENDENCIES ({len(graph_data['edges'])}):")
-        print("-" * 40)
-        for edge in graph_data["edges"]:
-            edge_type = edge["type"]
-            symbol = "→" if edge_type == "import" else "↗"
-            source_name = (
-                Path(edge["source"]).name
-                if edge["source"] in [n["id"] for n in file_nodes]
-                else edge["source"]
-            )
-            target_name = (
-                Path(edge["target"]).name
-                if edge["target"] in [n["id"] for n in file_nodes]
-                else edge["target"]
-            )
-            print(f"  {source_name} {symbol} {target_name} ({edge_type})")
-
-        print("\n" + "=" * 60)
