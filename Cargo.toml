@@ -1,0 +1,59 @@
+[package]
+name = "seiri"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.5.41", features = ["derive"] }
+serde_json = "1.0"
+
+[dev-dependencies]
+tempfile = "3.0"
+
+[profile.dev]
+opt-level = 0
+debug = true
+strip = "none"
+debug-assertions = true
+overflow-checks = true
+lto = false
+panic = "unwind"
+incremental = true
+codegen-units = 256
+rpath = false
+
+[profile.release]
+opt-level = 3
+debug = false
+strip = "none"
+debug-assertions = false
+overflow-checks = false
+lto = false
+panic = "unwind"
+incremental = false
+codegen-units = 16
+rpath = false
+
+[profile.test]
+opt-level = 0
+debug = true
+strip = "none"
+debug-assertions = true
+overflow-checks = true
+lto = false
+panic = "unwind"
+incremental = true
+codegen-units = 256
+rpath = false
+
+[profile.bench]
+opt-level = 3
+debug = false
+strip = "none"
+debug-assertions = false
+overflow-checks = false
+lto = false
+panic = "unwind"
+incremental = false
+codegen-units = 16
+rpath = false
