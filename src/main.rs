@@ -1,27 +1,69 @@
-mod config;
 mod core;
 mod parsers;
 
-use crate::config::load_language_extensions;
 use clap::Parser;
+use core::defs::Language;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use walkdir::WalkDir;
 
 #[derive(Parser)]
 struct CLI {
     /// Path to the project directory or file to parse
-    project_path: std::path::PathBuf,
+    project_path: PathBuf,
     /// Name of desired output file
     output_filename: Option<String>,
 }
 
-fn detect_file_language(file_path: PathBuf) -> Option<Vec<String>> {
-    todo!()
+fn detect_file_language(
+    target_file: PathBuf,
+    language_files: &mut HashMap<PathBuf, Language>,
+) -> Option<HashSet<Language>> {
+    let file_language = Language::from_file(target_file.to_str().unwrap())?;
+
+    let mut detected = HashSet::new();
+    language_files.insert(target_file.clone(), file_language);
+    detected.insert(file_language);
+    Some(detected)
 }
 
-fn detect_project_languages(dir_path: PathBuf) -> Option<Vec<String>> {
-    todo!()
+fn detect_project_languages(
+    target_dir: PathBuf,
+    language_files: &mut HashMap<PathBuf, Language>,
+) -> Option<HashSet<Language>> {
+    use std::fs;
 
-    // dir_path.iter().map(|f|)
+    // TODO: Read .gitignore if it exists
+    let mut exclude_patterns = Vec::new();
+    let gitignore_path = target_dir.join(".gitignore");
+    if gitignore_path.exists() {
+        if let Ok(content) = fs::read_to_string(gitignore_path) {
+            exclude_patterns = content
+                .lines()
+                .filter(|line| !line.trim().is_empty() && !line.starts_with('#'))
+                .map(|line| line.trim().to_string())
+                .collect();
+        }
+    }
+
+    let mut detected: HashSet<Language> = HashSet::new();
+
+    for entry in WalkDir::new(target_dir) {
+        let entry = entry.unwrap();
+        let path = entry.path();
+
+        if path.is_file() {
+            let file_language = Language::from_file(path.to_str().unwrap());
+
+            if file_language.is_some() {
+                let lang = file_language.unwrap();
+                language_files.insert(path.to_path_buf(), lang);
+                detected.insert(lang);
+            }
+        }
+    }
+
+    ternary!(detected.len() == 0, None, Some(detected))
 }
 
 fn run(path: PathBuf, output: Option<String>) -> Result<(), String> {
@@ -34,21 +76,16 @@ fn run(path: PathBuf, output: Option<String>) -> Result<(), String> {
         println!("Processing path: {:?}, output: {}", path, output.unwrap());
     }
 
-    // Load supported language information
-    // let language_extension_map = load_language_extensions();
-    match load_language_extensions() {
-        Ok(_) => Ok(()),
-        Err(err) => Err(err),
-    }
+    let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
 
     // Detect languages in file/project
-    // let languages = ternary!(
-    //     path.is_file(),
-    //     detect_file_language(path),
-    //     detect_project_languages(path)
-    // );
+    let _languages: Option<HashSet<Language>> = ternary!(
+        path.is_file(),
+        detect_file_language(path, &mut language_files),
+        detect_project_languages(path, &mut language_files)
+    );
 
-    // Ok(())
+    Ok(())
 }
 
 fn main() {
@@ -65,13 +102,13 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs::File;
+    use std::{fs::File, path::Path};
     use tempfile::TempDir;
 
     #[test]
     fn test_non_existent_path() {
-        let temp_dir = std::env::temp_dir();
-        let non_existent = temp_dir.join("non_existent_dir_12345");
+        let temp_dir = TempDir::new().unwrap();
+        let non_existent = temp_dir.path().join("non_existent_dir_12345");
 
         let result = run(non_existent.clone(), Some("output.txt".to_string()));
 
@@ -100,5 +137,43 @@ mod tests {
         );
 
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_detect_file() {
+        let current_file = Path::new(file!());
+        assert!(!current_file.try_exists().is_err());
+
+        let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
+        let result = detect_file_language(current_file.to_path_buf(), &mut language_files);
+
+        assert!(result.is_some());
+        assert!(result.unwrap().contains(&Language::Rust));
+    }
+
+    #[test]
+    fn test_detect_invalid_file() {
+        let current_file = Path::new("Cargo.lock");
+        assert!(!current_file.try_exists().is_err());
+
+        let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
+        let result = detect_file_language(current_file.to_path_buf(), &mut language_files);
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_detect_dir() {
+        let current_dir = Path::new(file!()).parent().unwrap().canonicalize().unwrap();
+        assert!(!current_dir.try_exists().is_err());
+
+        let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
+        let result = detect_project_languages(current_dir.to_path_buf(), &mut language_files);
+
+        assert!(&result.is_some());
+
+        let langs = result.unwrap();
+        assert!(langs.len() == 1);
+        assert!(langs.contains(&Language::Rust));
     }
 }
