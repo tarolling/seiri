@@ -12,6 +12,8 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       matrix:
         BUILD_TARGET: [release] # cargo profile
