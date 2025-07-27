@@ -1,8 +1,12 @@
+mod gui;
+use gui::run_gui;
+
 mod core;
 mod parsers;
 
 use clap::Parser;
-use core::defs::Language;
+use core::defs::{GraphNode, Language, Node};
+use parsers::rust::parse_rust_file;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use walkdir::WalkDir;
@@ -73,7 +77,11 @@ fn run(path: PathBuf, output: Option<String>) -> Result<(), String> {
     if output.is_none() {
         println!("Processing path: {:?} (no output)", path);
     } else {
-        println!("Processing path: {:?}, output: {}", path, output.unwrap());
+        println!(
+            "Processing path: {:?}, output: {}",
+            path,
+            output.as_ref().unwrap()
+        );
     }
 
     let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
@@ -81,9 +89,75 @@ fn run(path: PathBuf, output: Option<String>) -> Result<(), String> {
     // Detect languages in file/project
     let _languages: Option<HashSet<Language>> = ternary!(
         path.is_file(),
-        detect_file_language(path, &mut language_files),
-        detect_project_languages(path, &mut language_files)
+        detect_file_language(path.clone(), &mut language_files),
+        detect_project_languages(path.clone(), &mut language_files)
     );
+
+    // Parse Rust files and collect Nodes, indexed by file path
+    let mut node_map: HashMap<PathBuf, Node> = HashMap::new();
+    for (file_path, lang) in &language_files {
+        match lang {
+            Language::Rust => {
+                if let Some(node) = parse_rust_file(file_path) {
+                    node_map.insert(file_path.clone(), node);
+                }
+            }
+            // Add other languages here
+            _ => {}
+        }
+    }
+
+    // Build GraphNodes with edges to referenced files
+    let mut graph_nodes: Vec<GraphNode> = Vec::new();
+    let all_files: Vec<_> = node_map.keys().cloned().collect();
+    for (file_path, node) in &node_map {
+        let mut edges = Vec::new();
+        // Link by local imports
+        for import in &node.imports {
+            if import.is_local {
+                // Try to resolve to a file in the project
+                for other_file in &all_files {
+                    if other_file != file_path {
+                        // Simple heuristic: check if import path matches file stem
+                        if let Some(stem) = other_file.file_stem().and_then(|s| s.to_str()) {
+                            if import.path.starts_with(stem) {
+                                edges.push(other_file.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Link by external references (if they resolve to a local file)
+        for ext_ref in &node.external_references {
+            for other_file in &all_files {
+                if other_file != file_path {
+                    if let Some(stem) = other_file.file_stem().and_then(|s| s.to_str()) {
+                        if ext_ref.starts_with(stem) {
+                            edges.push(other_file.clone());
+                        }
+                    }
+                }
+            }
+        }
+        graph_nodes.push(GraphNode {
+            node: node.clone(),
+            edges,
+        });
+    }
+
+    // If output is Some("gui"), launch the egui visualization
+    if let Some(ref out) = output {
+        if out == "gui" {
+            run_gui(graph_nodes);
+            return Ok(());
+        }
+    }
+
+    // Otherwise, print the graph nodes and their edges
+    // for gnode in &graph_nodes {
+    //     println!("GraphNode: {:?}", gnode);
+    // }
 
     Ok(())
 }

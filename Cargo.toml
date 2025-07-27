@@ -1,12 +1,15 @@
 [package]
 name = "seiri"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 
 [dependencies]
 clap = { version = "4.5.41", features = ["derive"] }
+eframe = { version = "0.32.0", features = ["glow"] }
 egui = "0.32.0"
 once_cell = "1.21.3"
+tree-sitter = "0.20.10"
+tree-sitter-rust = "0.20.4"
 walkdir = "2.5.0"
 
 [dev-dependencies]

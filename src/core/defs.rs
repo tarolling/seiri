@@ -27,16 +27,16 @@ impl Language {
         }
     }
 
-    /// Returns all file extensions and config files that indicate this language
+    /// Returns all file extensions that indicate this language
     pub fn indicators(&self) -> &'static [&'static str] {
         match self {
             Language::C => &["c", "h"],
-            Language::Cpp => &["cpp", "hpp", "h", "CMakeLists.txt"],
-            Language::JavaScript => &["js", "ts", "package.json", "tsconfig.json"],
-            Language::Python => &["py", "requirements.txt", "pyproject.toml", "setup.py"],
-            Language::Rust => &["rs", "Cargo.toml"],
-            Language::Go => &["go", "go.mod"],
-            Language::Java => &["java", "pom.xml", "build.gradle"],
+            Language::Cpp => &["cpp", "hpp"],
+            Language::JavaScript => &["js"],
+            Language::Python => &["py"],
+            Language::Rust => &["rs"],
+            Language::Go => &["go"],
+            Language::Java => &["java"],
         }
     }
 
@@ -78,7 +78,30 @@ impl Language {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct Import {
+    pub path: String,
+    pub is_local: bool,
+}
+
+#[derive(Debug, Clone)]
 pub struct Node {
     pub file: PathBuf,
     pub language: Language,
+    /// List of imports with local/external classification
+    pub imports: Vec<Import>,
+    /// List of function names defined in this file
+    pub functions: Vec<String>,
+    /// List of container names (classes, structs, etc.) defined in this file
+    pub containers: Vec<String>,
+    /// List of references to external functions/containers (as strings)
+    pub external_references: Vec<String>,
+}
+
+/// A node in the project graph, with edges to other nodes it references
+#[derive(Debug, Clone)]
+pub struct GraphNode {
+    pub node: Node,
+    /// Edges to other files (by file path)
+    pub edges: Vec<PathBuf>,
 }

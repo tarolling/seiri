@@ -1,0 +1,85 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          draft: false
+          prerelease: false
+        id: create_release
+
+  build-release:
+    needs: create-release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            archive_ext: tar.gz
+            asset_name: seiri-linux-amd64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            archive_ext: tar.gz
+            asset_name: seiri-macos-amd64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive_ext: zip
+            asset_name: seiri-windows-amd64
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: ${{ matrix.target }}
+        override: true
+
+    - name: Install Linux dependencies
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pkg-config libx11-dev libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev libgl1-mesa-dev
+
+    - name: Build
+      run: cargo build --release --target ${{ matrix.target }}
+
+    - name: Package Binary (Unix)
+      if: matrix.os != 'windows-latest'
+      run: |
+        cd target/${{ matrix.target }}/release
+        tar czvf ../../../${{ matrix.asset_name }}.${{ matrix.archive_ext }} seiri
+        cd -
+
+    - name: Package Binary (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        cd target/${{ matrix.target }}/release
+        7z a ../../../${{ matrix.asset_name }}.${{ matrix.archive_ext }} seiri.exe
+        cd -
+
+    - name: Upload Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: ./${{ matrix.asset_name }}.${{ matrix.archive_ext }}
+        asset_name: ${{ matrix.asset_name }}.${{ matrix.archive_ext }}
+        asset_content_type: application/octet-stream
