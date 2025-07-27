@@ -1,41 +1,25 @@
-name: Test
+name: Build and Test
 
 on:
   push:
-    branches: [ "main", "dev" ]
+    branches: [ "main" ]
   pull_request:
     branches: [ "main", "dev" ]
 
-permissions:
-  contents: read
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        BUILD_TARGET: [release] # cargo profile
     steps:
     - uses: actions/checkout@v4
-
-    - name: Install uv
-      uses: astral-sh/setup-uv@v6
-      with:
-        version: "0.7.21"
-
-    - name: Set up Python 3.13.5
-      uses: actions/setup-python@v5
-      with:
-        python-version-file: ".python-version"
-
-    - name: Install dependencies
-      run: |
-        uv sync --locked --all-extras --dev
-
-    - name: Lint with ruff
-      run: |
-        uv run ruff check .
-
-    - name: Run tests with pytest
-      run: |
-        uv pip install -e .
-        export CI=true
-        uv run pytest -v --cov=src --cov-report=term-missing tests/
+    - name: Build binaries in "${{ matrix.BUILD_TARGET }}" mode
+      run: cargo build --verbose --profile ${{ matrix.BUILD_TARGET }}
+    - name: Run tests in "${{ matrix.BUILD_TARGET }}" mode
+      run: cargo test --verbose --profile ${{ matrix.BUILD_TARGET }}
