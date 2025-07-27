@@ -17,14 +17,16 @@ impl eframe::App for GraphApp {
             egui::SidePanel::right("details_panel").show(ctx, |ui| {
                 ui.heading("Node Details");
                 let node = &self.graph_nodes[selected_idx].node;
-                
+
                 // Basic file info
                 ui.label(format!("File: {}", node.file.display()));
                 ui.label(format!("Language: {:?}", node.language));
                 ui.separator();
 
                 // Dependencies
-                let incoming = self.graph_nodes.iter()
+                let incoming = self
+                    .graph_nodes
+                    .iter()
                     .filter(|n| n.edges.contains(&node.file))
                     .count();
                 let outgoing = self.graph_nodes[selected_idx].edges.len();
@@ -34,8 +36,11 @@ impl eframe::App for GraphApp {
                 ui.separator();
 
                 // Graph metrics
-                ui.label(format!("Degree centrality: {:.2}", (incoming + outgoing) as f32 / (self.graph_nodes.len() - 1) as f32));
-                
+                ui.label(format!(
+                    "Degree centrality: {:.2}",
+                    (incoming + outgoing) as f32 / (self.graph_nodes.len() - 1) as f32
+                ));
+
                 // Declarations
                 if !node.functions.is_empty() {
                     ui.collapsing("Functions", |ui| {
@@ -55,10 +60,9 @@ impl eframe::App for GraphApp {
                 // Imports classification
                 if !node.imports.is_empty() {
                     ui.collapsing("Imports", |ui| {
-                        let (local, external): (Vec<_>, Vec<_>) = node.imports
-                            .iter()
-                            .partition(|imp| imp.is_local);
-                        
+                        let (local, external): (Vec<_>, Vec<_>) =
+                            node.imports.iter().partition(|imp| imp.is_local);
+
                         if !local.is_empty() {
                             ui.label("Local:");
                             for imp in local {
@@ -142,10 +146,10 @@ impl eframe::App for GraphApp {
                     if let Some(j) = self.graph_nodes.iter().position(|n| &n.node.file == edge) {
                         let p1 = response.rect.left_top() + positions[i];
                         let p2 = response.rect.left_top() + positions[j];
-                        painter.line_segment([
-                            p1,
-                            p2
-                        ], egui::Stroke::new(2.0, egui::Color32::LIGHT_BLUE));
+                        painter.line_segment(
+                            [p1, p2],
+                            egui::Stroke::new(2.0, egui::Color32::LIGHT_BLUE),
+                        );
                     }
                 }
             }
@@ -159,7 +163,11 @@ impl eframe::App for GraphApp {
                     egui::Color32::from_rgb(120, 180, 255)
                 };
                 painter.circle_filled(pos, node_radius, color);
-                painter.circle_stroke(pos, node_radius, egui::Stroke::new(2.0, egui::Color32::BLACK));
+                painter.circle_stroke(
+                    pos,
+                    node_radius,
+                    egui::Stroke::new(2.0, egui::Color32::BLACK),
+                );
                 // Draw file name (just the file stem)
                 if let Some(stem) = node.node.file.file_stem().and_then(|s| s.to_str()) {
                     painter.text(
