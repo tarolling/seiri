@@ -1,14 +1,15 @@
 services:
   dev:
-    build: .
+    image: seiri-dev
+    build:
+      context: ..
+      dockerfile: .docker/Dockerfile
     volumes:
-      - .:/app
+      - ..:/app
       - cargo-cache:/usr/local/cargo/registry
       - target-cache:/app/target
     environment:
       - RUST_BACKTRACE=1
-    ports:
-      - "3000:3000"  # If you need to expose any ports
     command: /bin/bash
     stdin_open: true
     tty: true

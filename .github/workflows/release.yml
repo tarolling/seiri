@@ -9,23 +9,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  create-release:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref }}
-          draft: false
-          prerelease: false
-        id: create_release
-
   build-release:
-    needs: create-release
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
@@ -78,12 +62,9 @@ jobs:
         7z a ../../../${{ matrix.asset_name }}.${{ matrix.archive_ext }} seiri.exe
         cd -
 
-    - name: Upload Release Asset
-      uses: actions/upload-release-asset@v1
+    - name: Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: ${{ matrix.asset_name }}.${{ matrix.archive_ext }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ needs.create-release.outputs.upload_url }}
-        asset_path: ./${{ matrix.asset_name }}.${{ matrix.archive_ext }}
-        asset_name: ${{ matrix.asset_name }}.${{ matrix.archive_ext }}
-        asset_content_type: application/octet-stream

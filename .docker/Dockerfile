@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM rust:1.88-slim-bullseye
 
 RUN apt-get update && apt-get install -y \
