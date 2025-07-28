@@ -112,10 +112,8 @@ fn run(path: PathBuf, output: Option<String>) -> Result<(), String> {
     let all_files: Vec<_> = node_map.keys().cloned().collect();
     for (file_path, node) in &node_map {
         let mut edges = Vec::new();
-        // Link by local imports
         for import in &node.imports {
             if import.is_local {
-                // Try to resolve to a file in the project
                 for other_file in &all_files {
                     if other_file != file_path {
                         // Simple heuristic: check if import path matches file stem
@@ -146,7 +144,7 @@ fn run(path: PathBuf, output: Option<String>) -> Result<(), String> {
         });
     }
 
-    // If output is Some("gui"), launch the egui visualization
+    // Launch the visualization if requested
     if let Some(ref out) = output {
         if out == "gui" {
             run_gui(graph_nodes);

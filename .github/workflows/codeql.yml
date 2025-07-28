@@ -33,7 +33,6 @@ jobs:
     - name: Install Rust toolchain
       uses: actions-rust-lang/setup-rust-toolchain@v1
 
-    # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v3
       with:
@@ -41,10 +40,6 @@ jobs:
         build-mode: ${{ matrix.build-mode }}
         queries: security-and-quality
 
-    # If the analyze step fails for one of the languages you are analyzing with
-    # "We were unable to automatically build your code", modify the matrix above
-    # to set the build mode to "manual" for that language. Then modify this step
-    # to build your code.
     - if: matrix.build-mode == 'manual'
       shell: bash
       run: |

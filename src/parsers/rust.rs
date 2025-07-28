@@ -25,7 +25,7 @@ pub fn parse_rust_file<P: AsRef<Path>>(path: P) -> Option<Node> {
     let code = fs::read_to_string(&path).ok()?;
 
     let mut parser = Parser::new();
-    parser.set_language(tree_sitter_rust::language()).ok()?;
+    parser.set_language(&tree_sitter_rust::LANGUAGE.into()).expect("Error loading Rust grammar");
     let tree = parser.parse(&code, None)?;
     let root_node = tree.root_node();
 
