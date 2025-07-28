@@ -29,8 +29,9 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+
     - name: Install Rust toolchain
-    - uses: actions-rust-lang/setup-rust-toolchain@v1
+      uses: actions-rust-lang/setup-rust-toolchain@v1
 
     # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
