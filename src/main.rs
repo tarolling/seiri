@@ -5,7 +5,7 @@ mod core;
 mod parsers;
 
 use clap::Parser;
-use core::defs::{Language, FileNode};
+use core::defs::{FileNode, Language};
 use core::resolvers::GraphBuilder;
 use parsers::rust::parse_rust_file;
 use std::collections::{HashMap, HashSet};
@@ -126,7 +126,8 @@ fn run(path: PathBuf, output: Option<String>) -> Result<(), String> {
     println!("Resolved {} nodes with connections:", graph_nodes.len());
     for gnode in &graph_nodes {
         if !gnode.edges.is_empty() {
-            println!("  {} ({:?}) -> {} dependencies", 
+            println!(
+                "  {} ({:?}) -> {} dependencies",
                 gnode.data.file.file_name().unwrap().to_string_lossy(),
                 gnode.data.language,
                 gnode.edges.len()

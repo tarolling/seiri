@@ -1,4 +1,4 @@
-use crate::core::defs::{Import, Language, FileNode};
+use crate::core::defs::{FileNode, Import, Language};
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
@@ -25,7 +25,7 @@ fn is_local_import(import_path: &str, file_path: &Path) -> bool {
 // Helper to extract the full path from a use declaration
 fn extract_use_path(node: tree_sitter::Node, code: &str) -> String {
     let mut path_parts = Vec::new();
-    
+
     fn collect_path_parts(node: tree_sitter::Node, code: &str, parts: &mut Vec<String>) {
         match node.kind() {
             "scoped_identifier" => {
@@ -54,7 +54,7 @@ fn extract_use_path(node: tree_sitter::Node, code: &str) -> String {
             }
         }
     }
-    
+
     collect_path_parts(node, code, &mut path_parts);
     path_parts.join("::")
 }
@@ -63,7 +63,9 @@ pub fn parse_rust_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
     let code = fs::read_to_string(&path).ok()?;
 
     let mut parser = Parser::new();
-    parser.set_language(&tree_sitter_rust::LANGUAGE.into()).expect("Error loading Rust grammar");
+    parser
+        .set_language(&tree_sitter_rust::LANGUAGE.into())
+        .expect("Error loading Rust grammar");
     let tree = parser.parse(&code, None)?;
     let root_node = tree.root_node();
 
@@ -75,13 +77,13 @@ pub fn parse_rust_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
     // Traverse the syntax tree
     let mut cursor = root_node.walk();
     let mut stack = vec![root_node];
-    
+
     while let Some(node) = stack.pop() {
         match node.kind() {
             "use_declaration" => {
                 // Try to extract the import path (e.g., use foo::bar;)
                 let import_path = extract_use_path(node, &code);
-                
+
                 if !import_path.is_empty() {
                     let is_local = is_local_import(&import_path, path.as_ref());
                     imports.push(Import {

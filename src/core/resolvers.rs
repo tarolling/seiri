@@ -1,24 +1,26 @@
-use crate::core::defs::{GraphNode, Language, FileNode};
+use crate::core::defs::{FileNode, GraphNode, Language};
+use crate::core::resolvers::rust::RustResolver;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use crate::core::resolvers::rust::RustResolver;
 
-pub mod rust;
 pub mod python;
+pub mod rust;
 
 /// Module resolution trait
 pub trait LanguageResolver {
     /// Build module mapping for this language
     fn build_module_map(&mut self, files: &[PathBuf], project_root: &Path);
-    
+
     /// Resolve an import path to a file path for this language
     fn resolve_import(&self, import_path: &str, from_file: &Path) -> Option<PathBuf>;
-    
+
     /// Get additional edges from external references
-    fn resolve_external_references(&self, references: &HashSet<String>, from_file: &Path) -> Vec<PathBuf>;
+    fn resolve_external_references(
+        &self,
+        references: &HashSet<String>,
+        from_file: &Path,
+    ) -> Vec<PathBuf>;
 }
-
-
 
 /// Multi-language graph builder
 pub struct GraphBuilder {
@@ -35,8 +37,8 @@ impl GraphBuilder {
     /// Build graph edges for all languages
     pub fn build_graph_edges(
         &mut self,
-        node_map: &HashMap<PathBuf, FileNode>, 
-        project_root: &Path
+        node_map: &HashMap<PathBuf, FileNode>,
+        project_root: &Path,
     ) -> Vec<GraphNode> {
         // Group files by language
         let mut files_by_language: HashMap<Language, Vec<PathBuf>> = HashMap::new();
@@ -75,7 +77,8 @@ impl GraphBuilder {
                 }
 
                 // Process external references
-                let ext_refs = resolver.resolve_external_references(&node.external_references, file_path);
+                let ext_refs =
+                    resolver.resolve_external_references(&node.external_references, file_path);
                 for target_file in ext_refs {
                     if target_file != *file_path && !resolved_imports.contains(&target_file) {
                         edges.push(target_file.clone());

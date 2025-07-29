@@ -20,9 +20,7 @@ impl Language {
         static EXTENSION_MAP: Lazy<HashMap<&'static str, Language>> = Lazy::new(|| {
             let mut map = HashMap::new();
             // Populate with all languages and their indicators
-            for lang in &[
-                Language::Rust,
-            ] {
+            for lang in &[Language::Rust] {
                 for extension in lang.extensions() {
                     map.insert(*extension, *lang);
                 }

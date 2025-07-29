@@ -1,5 +1,8 @@
 use super::LanguageResolver;
-use std::{collections::HashSet, path::{Path, PathBuf}};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 
 pub struct PythonResolver {}
 
@@ -12,7 +15,11 @@ impl LanguageResolver for PythonResolver {
         todo!("Python import resolution not implemented yet");
     }
 
-    fn resolve_external_references(&self, _references: &HashSet<String>, _from_file: &Path) -> Vec<PathBuf> {
+    fn resolve_external_references(
+        &self,
+        _references: &HashSet<String>,
+        _from_file: &Path,
+    ) -> Vec<PathBuf> {
         todo!("Python external reference resolution not implemented yet");
     }
 }
