@@ -35,20 +35,18 @@ fn detect_project_languages(
     target_dir: PathBuf,
     language_files: &mut HashMap<PathBuf, Language>,
 ) -> Option<HashSet<Language>> {
-    use std::fs;
-
     // TODO: Read .gitignore if it exists
-    let mut exclude_patterns = Vec::new();
-    let gitignore_path = target_dir.join(".gitignore");
-    if gitignore_path.exists() {
-        if let Ok(content) = fs::read_to_string(gitignore_path) {
-            exclude_patterns = content
-                .lines()
-                .filter(|line| !line.trim().is_empty() && !line.starts_with('#'))
-                .map(|line| line.trim().to_string())
-                .collect();
-        }
-    }
+    // let mut exclude_patterns = Vec::new();
+    // let gitignore_path = target_dir.join(".gitignore");
+    // if gitignore_path.exists() {
+    //     if let Ok(content) = fs::read_to_string(gitignore_path) {
+    //         exclude_patterns = content
+    //             .lines()
+    //             .filter(|line| !line.trim().is_empty() && !line.starts_with('#'))
+    //             .map(|line| line.trim().to_string())
+    //             .collect();
+    //     }
+    // }
 
     let mut detected: HashSet<Language> = HashSet::new();
 
