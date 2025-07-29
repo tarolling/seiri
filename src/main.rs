@@ -5,7 +5,8 @@ mod core;
 mod parsers;
 
 use clap::Parser;
-use core::defs::{GraphNode, Language, Node};
+use core::defs::{Language, FileNode};
+use core::resolvers::GraphBuilder;
 use parsers::rust::parse_rust_file;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -65,7 +66,11 @@ fn detect_project_languages(
         }
     }
 
-    ternary!(detected.len() == 0, None, Some(detected))
+    if detected.len() == 0 {
+        None
+    } else {
+        Some(detected)
+    }
 }
 
 fn run(path: PathBuf, output: Option<String>) -> Result<(), String> {
@@ -84,15 +89,22 @@ fn run(path: PathBuf, output: Option<String>) -> Result<(), String> {
 
     let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
 
-    // Detect languages in file/project
-    let _languages: Option<HashSet<Language>> = ternary!(
-        path.is_file(),
-        detect_file_language(path.clone(), &mut language_files),
-        detect_project_languages(path.clone(), &mut language_files)
-    );
+    // Determine project root
+    let project_root = if path.is_file() {
+        path.parent().unwrap_or(&path).to_path_buf()
+    } else {
+        path.clone()
+    };
 
-    // Parse Rust files and collect Nodes, indexed by file path
-    let mut node_map: HashMap<PathBuf, Node> = HashMap::new();
+    // Detect languages in file/project
+    if path.is_file() {
+        detect_file_language(path.clone(), &mut language_files);
+    } else {
+        detect_project_languages(path.clone(), &mut language_files);
+    }
+
+    // Parse files and collect Nodes, indexed by file path
+    let mut node_map: HashMap<PathBuf, FileNode> = HashMap::new();
     for (file_path, lang) in &language_files {
         match lang {
             Language::Rust => {
@@ -100,46 +112,29 @@ fn run(path: PathBuf, output: Option<String>) -> Result<(), String> {
                     node_map.insert(file_path.clone(), node);
                 }
             }
-            // Add other languages here
-            _ => {}
+            _ => {
+                println!("Skipping unsupported language: {:?}", lang);
+            }
         }
     }
 
-    // Build GraphNodes with edges to referenced files
-    let mut graph_nodes: Vec<GraphNode> = Vec::new();
-    let all_files: Vec<_> = node_map.keys().cloned().collect();
-    for (file_path, node) in &node_map {
-        let mut edges = Vec::new();
-        for import in &node.imports {
-            if import.is_local {
-                for other_file in &all_files {
-                    if other_file != file_path {
-                        // Simple heuristic: check if import path matches file stem
-                        if let Some(stem) = other_file.file_stem().and_then(|s| s.to_str()) {
-                            if import.path.starts_with(stem) {
-                                edges.push(other_file.clone());
-                            }
-                        }
-                    }
-                }
+    // Build GraphNodes with multi-language support
+    let mut graph_builder = GraphBuilder::new();
+    let graph_nodes = graph_builder.build_graph_edges(&node_map, &project_root);
+
+    // Debug: Print resolved connections
+    println!("Resolved {} nodes with connections:", graph_nodes.len());
+    for gnode in &graph_nodes {
+        if !gnode.edges.is_empty() {
+            println!("  {} ({:?}) -> {} dependencies", 
+                gnode.data.file.file_name().unwrap().to_string_lossy(),
+                gnode.data.language,
+                gnode.edges.len()
+            );
+            for edge in &gnode.edges {
+                println!("    -> {}", edge.file_name().unwrap().to_string_lossy());
             }
         }
-        // Link by external references (if they resolve to a local file)
-        for ext_ref in &node.external_references {
-            for other_file in &all_files {
-                if other_file != file_path {
-                    if let Some(stem) = other_file.file_stem().and_then(|s| s.to_str()) {
-                        if ext_ref.starts_with(stem) {
-                            edges.push(other_file.clone());
-                        }
-                    }
-                }
-            }
-        }
-        graph_nodes.push(GraphNode {
-            node: node.clone(),
-            edges,
-        });
     }
 
     // Launch the visualization if requested
@@ -149,11 +144,6 @@ fn run(path: PathBuf, output: Option<String>) -> Result<(), String> {
             return Ok(());
         }
     }
-
-    // Otherwise, print the graph nodes and their edges
-    // for gnode in &graph_nodes {
-    //     println!("GraphNode: {:?}", gnode);
-    // }
 
     Ok(())
 }

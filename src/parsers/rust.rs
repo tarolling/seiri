@@ -1,4 +1,5 @@
-use crate::core::defs::{Import, Language, Node};
+use crate::core::defs::{Import, Language, FileNode};
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use tree_sitter::Parser;
@@ -21,7 +22,44 @@ fn is_local_import(import_path: &str, file_path: &Path) -> bool {
         }
 }
 
-pub fn parse_rust_file<P: AsRef<Path>>(path: P) -> Option<Node> {
+// Helper to extract the full path from a use declaration
+fn extract_use_path(node: tree_sitter::Node, code: &str) -> String {
+    let mut path_parts = Vec::new();
+    
+    fn collect_path_parts(node: tree_sitter::Node, code: &str, parts: &mut Vec<String>) {
+        match node.kind() {
+            "scoped_identifier" => {
+                let mut cursor = node.walk();
+                for child in node.children(&mut cursor) {
+                    collect_path_parts(child, code, parts);
+                }
+            }
+            "identifier" => {
+                if let Ok(text) = node.utf8_text(code.as_bytes()) {
+                    parts.push(text.to_string());
+                }
+            }
+            "scoped_use_list" | "use_list" => {
+                // For now, just take the first item in use lists like `use foo::{bar, baz};`
+                let mut cursor = node.walk();
+                if let Some(first_child) = node.children(&mut cursor).next() {
+                    collect_path_parts(first_child, code, parts);
+                }
+            }
+            _ => {
+                let mut cursor = node.walk();
+                for child in node.children(&mut cursor) {
+                    collect_path_parts(child, code, parts);
+                }
+            }
+        }
+    }
+    
+    collect_path_parts(node, code, &mut path_parts);
+    path_parts.join("::")
+}
+
+pub fn parse_rust_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
     let code = fs::read_to_string(&path).ok()?;
 
     let mut parser = Parser::new();
@@ -32,27 +70,45 @@ pub fn parse_rust_file<P: AsRef<Path>>(path: P) -> Option<Node> {
     let mut imports = Vec::new();
     let mut functions = Vec::new();
     let mut containers = Vec::new();
-    let mut external_references = Vec::new();
+    let mut external_references = HashSet::new();
 
     // Traverse the syntax tree
     let mut cursor = root_node.walk();
     let mut stack = vec![root_node];
+    
     while let Some(node) = stack.pop() {
         match node.kind() {
             "use_declaration" => {
                 // Try to extract the import path (e.g., use foo::bar;)
-                let mut import_path = String::new();
-                for child in node.children(&mut cursor) {
-                    if child.kind() == "scoped_identifier" || child.kind() == "identifier" {
-                        import_path = child.utf8_text(code.as_bytes()).unwrap_or("").to_string();
-                        break;
-                    }
-                }
+                let import_path = extract_use_path(node, &code);
+                
                 if !import_path.is_empty() {
                     let is_local = is_local_import(&import_path, path.as_ref());
                     imports.push(Import {
                         path: import_path,
                         is_local,
+                    });
+                }
+            }
+            "mod_item" => {
+                // Handle module declarations like "pub mod python;" or "mod utils;"
+                let mut mod_name = String::new();
+                let mut is_declaration = false;
+
+                for child in node.children(&mut cursor) {
+                    if child.kind() == "identifier" {
+                        mod_name = child.utf8_text(code.as_bytes()).unwrap_or("").to_string();
+                    } else if child.kind() == ";" {
+                        // If we find a semicolon, this is a module declaration (not inline definition)
+                        is_declaration = true;
+                    }
+                }
+
+                // Only add as import if it's a declaration (has semicolon)
+                if !mod_name.is_empty() && is_declaration {
+                    imports.push(Import {
+                        path: mod_name,
+                        is_local: true,
                     });
                 }
             }
@@ -77,7 +133,7 @@ pub fn parse_rust_file<P: AsRef<Path>>(path: P) -> Option<Node> {
             // For external references, look for scoped identifiers (e.g., foo::bar)
             "scoped_identifier" => {
                 let text = node.utf8_text(code.as_bytes()).unwrap_or("").to_string();
-                external_references.push(text);
+                external_references.insert(text);
             }
             _ => {}
         }
@@ -87,7 +143,7 @@ pub fn parse_rust_file<P: AsRef<Path>>(path: P) -> Option<Node> {
         }
     }
 
-    Some(Node {
+    Some(FileNode {
         file: path.as_ref().to_path_buf(),
         language: Language::Rust,
         imports,
