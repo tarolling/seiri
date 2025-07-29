@@ -1,7 +1,7 @@
 use crate::core::defs::{Import, Language, Node};
 use std::fs;
 use std::path::Path;
-use tree_sitter::{Parser, Tree};
+use tree_sitter::Parser;
 use tree_sitter_rust;
 
 /// Parses a Rust file and returns a Node with imports, functions, containers, and external references.
