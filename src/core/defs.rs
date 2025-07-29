@@ -28,10 +28,11 @@ impl Language {
             map
         });
 
-        let ext = filename.split('.').last().unwrap_or(filename);
+        let ext = filename.split('.').next_back().unwrap_or(filename);
         EXTENSION_MAP.get(ext).copied()
     }
 
+    #[allow(clippy::wrong_self_convention)]
     pub fn to_string(&self) -> &'static str {
         match self {
             Language::Rust => "Rust",

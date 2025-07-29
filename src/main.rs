@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use walkdir::WalkDir;
 
 #[derive(Parser)]
-struct CLI {
+struct Cli {
     /// Path to the project directory or file to parse
     project_path: PathBuf,
     /// Name of desired output file
@@ -66,7 +66,7 @@ fn detect_project_languages(
         }
     }
 
-    if detected.len() == 0 {
+    if detected.is_empty() {
         None
     } else {
         Some(detected)
@@ -75,10 +75,10 @@ fn detect_project_languages(
 
 fn run(path: PathBuf, output: Option<String>) -> Result<(), String> {
     if !path.exists() {
-        return Err(format!("The path you specified does not exist: {:?}", path));
+        return Err(format!("The path you specified does not exist: {path:?}"));
     }
     if output.is_none() {
-        println!("Processing path: {:?} (no output)", path);
+        println!("Processing path: {path:?} (no output)");
     } else {
         println!(
             "Processing path: {:?}, output: {}",
@@ -112,9 +112,9 @@ fn run(path: PathBuf, output: Option<String>) -> Result<(), String> {
                     node_map.insert(file_path.clone(), node);
                 }
             }
-            _ => {
-                println!("Skipping unsupported language: {:?}", lang);
-            }
+            // _ => {
+            //     println!("Skipping unsupported language: {lang:?}");
+            // }
         }
     }
 
@@ -150,7 +150,7 @@ fn run(path: PathBuf, output: Option<String>) -> Result<(), String> {
 }
 
 fn main() {
-    let args = CLI::parse();
+    let args = Cli::parse();
     match run(args.project_path, args.output_filename) {
         Ok(_) => println!("Success!"),
         Err(e) => {

@@ -45,7 +45,7 @@ impl GraphBuilder {
         for (file_path, node) in node_map {
             files_by_language
                 .entry(node.language)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(file_path.clone());
         }
 

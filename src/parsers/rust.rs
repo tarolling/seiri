@@ -5,8 +5,6 @@ use std::path::Path;
 use tree_sitter::Parser;
 use tree_sitter_rust;
 
-/// Parses a Rust file and returns a Node with imports, functions, containers, and external references.
-
 /// Helper to determine if an import is local (starts with crate/self/super or current mod)
 fn is_local_import(import_path: &str, file_path: &Path) -> bool {
     import_path.starts_with("crate::")
@@ -15,7 +13,7 @@ fn is_local_import(import_path: &str, file_path: &Path) -> bool {
         || {
             // Also treat module-relative imports as local (e.g., modname::foo)
             if let Some(stem) = file_path.file_stem().and_then(|s| s.to_str()) {
-                import_path.starts_with(&format!("{}::", stem))
+                import_path.starts_with(&format!("{stem}::"))
             } else {
                 false
             }

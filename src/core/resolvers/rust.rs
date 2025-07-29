@@ -71,7 +71,7 @@ impl RustResolver {
 
         // Try different patterns for module files:
         // 1. module_name.rs in the same directory
-        let module_file = from_dir.join(format!("{}.rs", module_name));
+        let module_file = from_dir.join(format!("{module_name}.rs"));
         if module_file.exists() {
             return Some(module_file);
         }
@@ -85,9 +85,9 @@ impl RustResolver {
         // 3. Check if we have it in our module map
         if let Some(current_module) = self.file_to_module.get(from_file) {
             let target_module = if current_module == "crate" {
-                format!("crate::{}", module_name)
+                format!("crate::{module_name}")
             } else {
-                format!("{}::{}", current_module, module_name)
+                format!("{current_module}::{module_name}")
             };
 
             if let Some(target_file) = self.module_to_file.get(&target_module) {
@@ -184,11 +184,7 @@ impl LanguageResolver for RustResolver {
 
         for ext_ref in references {
             // Try to resolve external references as module paths
-            let potential_module = if ext_ref.contains("::") {
-                format!("crate::{}", ext_ref)
-            } else {
-                format!("crate::{}", ext_ref)
-            };
+            let potential_module = format!("crate::{ext_ref}");
 
             if let Some(target_file) = self.module_to_file.get(&potential_module) {
                 resolved.push(target_file.clone());
