@@ -1,42 +1,17 @@
 use once_cell::sync::Lazy;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Language {
-    C,
-    Cpp,
-    JavaScript,
-    Python,
     Rust,
-    Go,
-    Java,
 }
 
 impl Language {
-    /// Returns the primary file extension for this language
-    pub fn extension(&self) -> &'static str {
-        match self {
-            Language::C => "c",
-            Language::Cpp => "cpp",
-            Language::JavaScript => "js",
-            Language::Python => "py",
-            Language::Rust => "rs",
-            Language::Go => "go",
-            Language::Java => "java",
-        }
-    }
-
     /// Returns all file extensions that indicate this language
-    pub fn indicators(&self) -> &'static [&'static str] {
+    pub fn extensions(&self) -> &'static [&'static str] {
         match self {
-            Language::C => &["c", "h"],
-            Language::Cpp => &["cpp", "hpp"],
-            Language::JavaScript => &["js"],
-            Language::Python => &["py"],
             Language::Rust => &["rs"],
-            Language::Go => &["go"],
-            Language::Java => &["java"],
         }
     }
 
@@ -45,35 +20,22 @@ impl Language {
         static EXTENSION_MAP: Lazy<HashMap<&'static str, Language>> = Lazy::new(|| {
             let mut map = HashMap::new();
             // Populate with all languages and their indicators
-            for lang in &[
-                Language::C,
-                Language::Cpp,
-                Language::JavaScript,
-                Language::Python,
-                Language::Rust,
-                Language::Go,
-                Language::Java,
-            ] {
-                for indicator in lang.indicators() {
-                    map.insert(*indicator, *lang);
+            for lang in &[Language::Rust] {
+                for extension in lang.extensions() {
+                    map.insert(*extension, *lang);
                 }
             }
             map
         });
 
-        let ext = filename.split('.').last().unwrap_or(filename);
+        let ext = filename.split('.').next_back().unwrap_or(filename);
         EXTENSION_MAP.get(ext).copied()
     }
 
+    #[allow(clippy::wrong_self_convention)]
     pub fn to_string(&self) -> &'static str {
         match self {
-            Language::C => "C",
-            Language::Cpp => "Cpp",
-            Language::JavaScript => "JavaScript",
-            Language::Python => "Python",
             Language::Rust => "Rust",
-            Language::Go => "Go",
-            Language::Java => "Java",
         }
     }
 }
@@ -85,7 +47,7 @@ pub struct Import {
 }
 
 #[derive(Debug, Clone)]
-pub struct Node {
+pub struct FileNode {
     pub file: PathBuf,
     pub language: Language,
     /// List of imports with local/external classification
@@ -95,13 +57,13 @@ pub struct Node {
     /// List of container names (classes, structs, etc.) defined in this file
     pub containers: Vec<String>,
     /// List of references to external functions/containers (as strings)
-    pub external_references: Vec<String>,
+    pub external_references: HashSet<String>,
 }
 
 /// A node in the project graph, with edges to other nodes it references
 #[derive(Debug, Clone)]
 pub struct GraphNode {
-    pub node: Node,
+    pub data: FileNode,
     /// Edges to other files (by file path)
     pub edges: Vec<PathBuf>,
 }
