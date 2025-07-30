@@ -18,6 +18,9 @@ struct Cli {
     project_path: PathBuf,
     /// Name of desired output file
     output_filename: Option<String>,
+    /// Enable verbose output
+    #[arg(short, long)]
+    verbose: bool,
 }
 
 fn detect_file_language(
@@ -73,18 +76,20 @@ fn detect_project_languages(
     }
 }
 
-fn run(path: PathBuf, output: Option<String>) -> Result<(), String> {
+fn run(path: PathBuf, output: Option<String>, verbose: bool) -> Result<(), String> {
     if !path.exists() {
         return Err(format!("The path you specified does not exist: {path:?}"));
     }
-    if output.is_none() {
-        println!("Processing path: {path:?} (no output)");
-    } else {
-        println!(
-            "Processing path: {:?}, output: {}",
-            path,
-            output.as_ref().unwrap()
-        );
+    if verbose {
+        if output.is_none() {
+            println!("Processing path: {path:?} (no output)");
+        } else {
+            println!(
+                "Processing path: {:?}, output: {}",
+                path,
+                output.as_ref().unwrap()
+            );
+        }
     }
 
     let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
@@ -109,12 +114,17 @@ fn run(path: PathBuf, output: Option<String>) -> Result<(), String> {
         match lang {
             Language::Rust => {
                 if let Some(node) = parse_rust_file(file_path) {
+                    if verbose {
+                        println!("Parsed Rust file: {}", file_path.display());
+                    }
                     node_map.insert(file_path.clone(), node);
                 }
             }
-            // _ => {
-            //     println!("Skipping unsupported language: {lang:?}");
-            // }
+            _ => {
+                if verbose {
+                    println!("Skipping unsupported language: {:?} for file {}", lang, file_path.display());
+                }
+            }
         }
     }
 
@@ -122,19 +132,27 @@ fn run(path: PathBuf, output: Option<String>) -> Result<(), String> {
     let mut graph_builder = GraphBuilder::new();
     let graph_nodes = graph_builder.build_graph_edges(&node_map, &project_root);
 
-    // Debug: Print resolved connections
-    println!("Resolved {} nodes with connections:", graph_nodes.len());
-    for gnode in &graph_nodes {
-        if !gnode.edges.is_empty() {
+    if verbose {
+        // Print resolved connections
+        println!("\nResolved {} nodes with connections:", graph_nodes.len());
+        for gnode in &graph_nodes {
             println!(
-                "  {} ({:?}) -> {} dependencies",
+                "  {} ({:?}):",
                 gnode.data.file.file_name().unwrap().to_string_lossy(),
                 gnode.data.language,
-                gnode.edges.len()
             );
-            for edge in &gnode.edges {
-                println!("    -> {}", edge.file_name().unwrap().to_string_lossy());
+            println!("    Functions: {}", gnode.data.functions.len());
+            println!("    Containers: {}", gnode.data.containers.len());
+            println!("    Imports: {}", gnode.data.imports.len());
+            println!("    Dependencies: {}", gnode.edges.len());
+            
+            if !gnode.edges.is_empty() {
+                println!("    Depends on:");
+                for edge in &gnode.edges {
+                    println!("      -> {}", edge.file_name().unwrap().to_string_lossy());
+                }
             }
+            println!();
         }
     }
 
@@ -151,8 +169,14 @@ fn run(path: PathBuf, output: Option<String>) -> Result<(), String> {
 
 fn main() {
     let args = Cli::parse();
-    match run(args.project_path, args.output_filename) {
-        Ok(_) => println!("Success!"),
+    match run(args.project_path, args.output_filename, args.verbose) {
+        Ok(_) => {
+            if args.verbose {
+                println!("Operation completed successfully!");
+            } else {
+                println!("Success!");
+            }
+        }
         Err(e) => {
             eprintln!("seiri error: {e}");
             std::process::exit(1);
@@ -171,7 +195,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let non_existent = temp_dir.path().join("non_existent_dir_12345");
 
-        let result = run(non_existent.clone(), Some("output.txt".to_string()));
+        let result = run(non_existent.clone(), Some("output.txt".to_string()), false);
 
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("does not exist"));
@@ -183,7 +207,7 @@ mod tests {
         let temp_file = temp_dir.path().join("test_file.txt");
         File::create(&temp_file).unwrap();
 
-        let result = run(temp_file, Some("output.txt".to_string()));
+        let result = run(temp_file, Some("output.txt".to_string()), false);
 
         assert!(result.is_ok());
     }
@@ -195,7 +219,19 @@ mod tests {
         let result = run(
             temp_dir.path().to_path_buf(),
             Some("output.txt".to_string()),
+            false,
         );
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_verbose_output() {
+        let temp_dir = TempDir::new().unwrap();
+        let temp_file = temp_dir.path().join("test.rs");
+        File::create(&temp_file).unwrap();
+
+        let result = run(temp_file, Some("output.txt".to_string()), true);
 
         assert!(result.is_ok());
     }
