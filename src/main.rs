@@ -123,6 +123,9 @@ fn run(path: PathBuf, output: Option<String>, verbose: bool) -> Result<(), Strin
             }
             Language::Python => {
                 if let Some(node) = parse_python_file(file_path) {
+                    if verbose {
+                        println!("Parsed Python file: {}", file_path.display());
+                    }
                     node_map.insert(file_path.clone(), node);
                 }
             }
