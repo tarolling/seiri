@@ -122,7 +122,11 @@ fn run(path: PathBuf, output: Option<String>, verbose: bool) -> Result<(), Strin
             }
             _ => {
                 if verbose {
-                    println!("Skipping unsupported language: {:?} for file {}", lang, file_path.display());
+                    println!(
+                        "Skipping unsupported language: {:?} for file {}",
+                        lang,
+                        file_path.display()
+                    );
                 }
             }
         }
@@ -145,7 +149,7 @@ fn run(path: PathBuf, output: Option<String>, verbose: bool) -> Result<(), Strin
             println!("    Containers: {}", gnode.data.containers.len());
             println!("    Imports: {}", gnode.data.imports.len());
             println!("    Dependencies: {}", gnode.edges.len());
-            
+
             if !gnode.edges.is_empty() {
                 println!("    Depends on:");
                 for edge in &gnode.edges {
