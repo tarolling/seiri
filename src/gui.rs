@@ -152,13 +152,15 @@ impl SeiriGraph {
             // External dependencies
             match node.data.language {
                 crate::core::defs::Language::Rust => egui::Color32::from_rgb(160, 120, 100), // Muted rust color
-                // _ => egui::Color32::from_rgb(120, 120, 120), // Gray for other external
+                crate::core::defs::Language::Python => egui::Color32::from_rgb(100, 150, 200), // Python blue
+                _ => egui::Color32::from_rgb(120, 120, 120), // Gray for other external
             }
         } else {
             // Internal project files
             match node.data.language {
                 crate::core::defs::Language::Rust => egui::Color32::from_rgb(222, 165, 132), // Rust orange
-                // _ => egui::Color32::from_rgb(100, 180, 220), // Blue for other internal
+                crate::core::defs::Language::Python => egui::Color32::from_rgb(100, 180, 220), // Python blue
+                _ => egui::Color32::from_rgb(120, 120, 100), // Blue for other internal
             }
         };
 
@@ -446,7 +448,7 @@ impl eframe::App for SeiriGraph {
                     ui.group(|ui| {
                         ui.strong("File Information");
                         ui.label(format!("📁 {}", node.file.display()));
-                        ui.label(format!("🔧 {:?}", node.language.to_string()));
+                        ui.label(format!("🔧 {:?}", node.language));
                     });
 
                     ui.separator();

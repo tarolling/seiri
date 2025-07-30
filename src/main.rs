@@ -8,6 +8,7 @@ use clap::Parser;
 use core::defs::{FileNode, Language};
 use core::resolvers::GraphBuilder;
 use parsers::rust::parse_rust_file;
+use parsers::python::parse_python_file;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use walkdir::WalkDir;
@@ -109,6 +110,11 @@ fn run(path: PathBuf, output: Option<String>) -> Result<(), String> {
         match lang {
             Language::Rust => {
                 if let Some(node) = parse_rust_file(file_path) {
+                    node_map.insert(file_path.clone(), node);
+                }
+            }
+            Language::Python => {
+                if let Some(node) = parse_python_file(file_path) {
                     node_map.insert(file_path.clone(), node);
                 }
             }
