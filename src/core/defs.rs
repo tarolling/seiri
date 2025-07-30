@@ -5,7 +5,7 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Language {
     Rust,
-    Python
+    Python,
 }
 
 impl Language {
