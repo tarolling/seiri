@@ -82,7 +82,6 @@ fn extract_import_path(node: tree_sitter::Node, code: &str) -> Vec<String> {
             let mut relative_dots = 0;
 
             for child in node.children(&mut cursor) {
-                println!("Processing child: {}", child.kind());
                 match child.kind() {
                     "dotted_name" => {
                         let mut parts = Vec::new();
@@ -156,11 +155,9 @@ pub fn parse_python_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
         match node.kind() {
             "import_statement" | "import_from_statement" => {
                 // Handle both "import foo" and "from foo import bar"
-                // println!("Processing import node: {}", node);
                 let import_paths = extract_import_path(node, &code);
                 for import_path in import_paths {
                     let is_local = is_local_import(&import_path, path.as_ref());
-                    println!("Import path: {}, is_local: {}", import_path, is_local);
                     if is_local {
                         imports.push(Import {
                             path: import_path.trim_start_matches(".").to_string(),
@@ -260,7 +257,6 @@ from ..parent_module import another_thing
 
         let result = parse_python_file(&file_path).unwrap();
         let import_paths: Vec<_> = result.imports.iter().map(|i| i.path.as_str()).collect();
-        println!("Imports: {:?}", import_paths);
 
         assert!(import_paths.contains(&"os"));
         assert!(import_paths.contains(&"sys"));
