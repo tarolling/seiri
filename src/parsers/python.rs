@@ -116,7 +116,7 @@ fn extract_import_path(node: tree_sitter::Node, code: &str) -> Vec<String> {
 
                         if !name.is_empty() {
                             imports.push(if relative_dots > 0 {
-                                format!("{}{}", prefix, name)
+                                format!("{prefix}{name}")
                             } else {
                                 prefix
                             });

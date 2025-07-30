@@ -129,15 +129,6 @@ fn run(path: PathBuf, output: Option<String>, verbose: bool) -> Result<(), Strin
                     node_map.insert(file_path.clone(), node);
                 }
             }
-            _ => {
-                if verbose {
-                    println!(
-                        "Skipping unsupported language: {:?} for file {}",
-                        lang,
-                        file_path.display()
-                    );
-                }
-            }
         }
     }
 

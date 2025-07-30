@@ -153,14 +153,12 @@ impl SeiriGraph {
             match node.data.language {
                 crate::core::defs::Language::Rust => egui::Color32::from_rgb(160, 120, 100), // Muted rust color
                 crate::core::defs::Language::Python => egui::Color32::from_rgb(100, 150, 200), // Python blue
-                _ => egui::Color32::from_rgb(120, 120, 120), // Gray for other external
             }
         } else {
             // Internal project files
             match node.data.language {
                 crate::core::defs::Language::Rust => egui::Color32::from_rgb(222, 165, 132), // Rust orange
                 crate::core::defs::Language::Python => egui::Color32::from_rgb(100, 180, 220), // Python blue
-                _ => egui::Color32::from_rgb(120, 120, 100), // Blue for other internal
             }
         };
 
