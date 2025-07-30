@@ -7,6 +7,7 @@ mod parsers;
 use clap::Parser;
 use core::defs::{FileNode, Language};
 use core::resolvers::GraphBuilder;
+use parsers::python::parse_python_file;
 use parsers::rust::parse_rust_file;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -120,13 +121,12 @@ fn run(path: PathBuf, output: Option<String>, verbose: bool) -> Result<(), Strin
                     node_map.insert(file_path.clone(), node);
                 }
             }
-            _ => {
-                if verbose {
-                    println!(
-                        "Skipping unsupported language: {:?} for file {}",
-                        lang,
-                        file_path.display()
-                    );
+            Language::Python => {
+                if let Some(node) = parse_python_file(file_path) {
+                    if verbose {
+                        println!("Parsed Python file: {}", file_path.display());
+                    }
+                    node_map.insert(file_path.clone(), node);
                 }
             }
         }

@@ -5,6 +5,7 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Language {
     Rust,
+    Python,
 }
 
 impl Language {
@@ -12,6 +13,7 @@ impl Language {
     pub fn extensions(&self) -> &'static [&'static str] {
         match self {
             Language::Rust => &["rs"],
+            Language::Python => &["py"],
         }
     }
 
@@ -32,10 +34,11 @@ impl Language {
         EXTENSION_MAP.get(ext).copied()
     }
 
-    #[allow(clippy::wrong_self_convention)]
+    #[allow(clippy::wrong_self_convention, dead_code)]
     pub fn to_string(&self) -> &'static str {
         match self {
             Language::Rust => "Rust",
+            Language::Python => "Python",
         }
     }
 }
