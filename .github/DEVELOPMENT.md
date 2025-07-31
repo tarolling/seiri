@@ -30,14 +30,16 @@
 
 To create a new release:
 
-1. Tag your commit:
+1. Bump the version in [Cargo.toml](/Cargo.toml).
+2. Rebuild to ensure nothing changes.
+3. Tag the commit:
 
-   ```bash
+   ```sh
    git tag -a v1.0.0 -m "Release v1.0.0"
    git push origin v1.0.0
    ```
 
-2. The GitHub Actions workflow will automatically:
+4. The GitHub Actions workflow will automatically:
    - Create a new release
    - Build binaries for Linux, macOS, and Windows
    - Upload the binaries to the release
