@@ -9,7 +9,7 @@ A platform-agnostic project visualization tool.
 
 ## Overview
 
-seiri breaks down project structures into a common format that can be used by developers and AI alike to better understand the design of large codebases. 
+seiri breaks down project structures into a common format that can be used by developers and AI alike to better understand the design of large codebases.
 
 * Explore system structure and dependencies visually
 * Extract modules, imports, functions, and containers
