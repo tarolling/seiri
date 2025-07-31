@@ -2,6 +2,7 @@ mod gui;
 use gui::run_gui;
 
 mod core;
+mod export;
 mod parsers;
 
 use clap::Parser;
@@ -160,11 +161,26 @@ fn run(path: PathBuf, output: Option<String>, verbose: bool) -> Result<(), Strin
         }
     }
 
-    // Launch the visualization if requested
+    // Launch the visualization or export if requested
     if let Some(ref out) = output {
-        if out == "gui" {
-            run_gui(graph_nodes);
-            return Ok(());
+        match out.as_str() {
+            "gui" => {
+                run_gui(graph_nodes);
+                return Ok(());
+            }
+            output_file if output_file.ends_with(".svg") => {
+                if verbose {
+                    println!("Exporting graph to SVG: {output_file}");
+                }
+                export::export_graph_as_svg(&graph_nodes, &PathBuf::from(output_file))
+                    .map_err(|e| format!("Failed to export SVG: {e}"))?;
+                if verbose {
+                    println!("Successfully exported to {output_file}");
+                }
+            }
+            _ => {
+                return Err(format!("Unsupported output format: {out}"));
+            }
         }
     }
 
