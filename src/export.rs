@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
-use svg::node::element::{Circle, Line, Text, Title};
 use svg::Document;
+use svg::node::element::{Circle, Line, Text, Title};
 
 const CANVAS_WIDTH: f32 = 1200.0;
 const CANVAS_HEIGHT: f32 = 900.0;
@@ -44,7 +44,7 @@ pub fn export_graph_as_svg(graph_nodes: &[GraphNode], output_path: &Path) -> Res
     // Add edges first (so they appear under nodes)
     for node in graph_nodes {
         let (start_x, start_y) = positions.get(&node.data.file).unwrap();
-        
+
         for edge in &node.edges {
             if let Some((end_x, end_y)) = positions.get(edge) {
                 let edge = Line::new()
@@ -68,10 +68,13 @@ pub fn export_graph_as_svg(graph_nodes: &[GraphNode], output_path: &Path) -> Res
             .set("cx", *x)
             .set("cy", *y)
             .set("r", NODE_RADIUS)
-            .set("fill", match node.data.language {
-                crate::core::defs::Language::Rust => RUST_COLOR,
-                crate::core::defs::Language::Python => PYTHON_COLOR,
-            })
+            .set(
+                "fill",
+                match node.data.language {
+                    crate::core::defs::Language::Rust => RUST_COLOR,
+                    crate::core::defs::Language::Python => PYTHON_COLOR,
+                },
+            )
             .set("stroke", "black")
             .set("stroke-width", 2);
 
@@ -100,14 +103,11 @@ pub fn export_graph_as_svg(graph_nodes: &[GraphNode], output_path: &Path) -> Res
     let legend_y = MARGIN;
     let legend_x = MARGIN;
     let legend_spacing = 25.0;
-    let langs = [
-        ("Rust", RUST_COLOR),
-        ("Python", PYTHON_COLOR),
-    ];
+    let langs = [("Rust", RUST_COLOR), ("Python", PYTHON_COLOR)];
 
     for (i, (lang, color)) in langs.iter().enumerate() {
         let y = legend_y + (i as f32 * legend_spacing);
-        
+
         // Legend dot
         let dot = Circle::new()
             .set("cx", legend_x)
