@@ -143,17 +143,17 @@ fn run(path: PathBuf, output: Option<String>, verbose: bool) -> Result<(), Strin
         for gnode in &graph_nodes {
             println!(
                 "  {} ({:?}):",
-                gnode.data.file.file_name().unwrap().to_string_lossy(),
-                gnode.data.language,
+                gnode.data().file().file_name().unwrap().to_string_lossy(),
+                gnode.data().language(),
             );
-            println!("    Functions: {}", gnode.data.functions.len());
-            println!("    Containers: {}", gnode.data.containers.len());
-            println!("    Imports: {}", gnode.data.imports.len());
-            println!("    Dependencies: {}", gnode.edges.len());
+            println!("    Functions: {}", gnode.data().functions().len());
+            println!("    Containers: {}", gnode.data().containers().len());
+            println!("    Imports: {}", gnode.data().imports().len());
+            println!("    Dependencies: {}", gnode.edges().len());
 
-            if !gnode.edges.is_empty() {
+            if !gnode.edges().is_empty() {
                 println!("    Depends on:");
-                for edge in &gnode.edges {
+                for edge in gnode.edges() {
                     println!("      -> {}", edge.file_name().unwrap().to_string_lossy());
                 }
             }

@@ -134,6 +134,7 @@ fn extract_import_path(node: tree_sitter::Node, code: &str) -> Vec<String> {
 
 pub fn parse_python_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
     let code = fs::read_to_string(&path).ok()?;
+    let loc = code.lines().count() as u32;
 
     let mut parser = Parser::new();
     parser
@@ -159,15 +160,12 @@ pub fn parse_python_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
                 for import_path in import_paths {
                     let is_local = is_local_import(&import_path, path.as_ref());
                     if is_local {
-                        imports.push(Import {
-                            path: import_path.trim_start_matches(".").to_string(),
+                        imports.push(Import::new(
+                            import_path.trim_start_matches(".").to_string(),
                             is_local,
-                        });
+                        ));
                     } else {
-                        imports.push(Import {
-                            path: import_path,
-                            is_local,
-                        });
+                        imports.push(Import::new(import_path, is_local));
                     }
                 }
             }
@@ -218,14 +216,15 @@ pub fn parse_python_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
         }
     }
 
-    Some(FileNode {
-        file: path.as_ref().to_path_buf(),
-        language: Language::Python,
+    Some(FileNode::new(
+        path.as_ref().to_path_buf(),
+        loc,
+        Language::Python,
         imports,
         functions,
         containers,
         external_references,
-    })
+    ))
 }
 
 #[cfg(test)]
@@ -256,7 +255,7 @@ from ..parent_module import another_thing
         let file_path = create_test_file(&temp_dir, "test.py", content);
 
         let result = parse_python_file(&file_path).unwrap();
-        let import_paths: Vec<_> = result.imports.iter().map(|i| i.path.as_str()).collect();
+        let import_paths: Vec<_> = result.imports().iter().map(|i| i.path()).collect();
 
         assert!(import_paths.contains(&"os"));
         assert!(import_paths.contains(&"sys"));
@@ -284,16 +283,16 @@ import sys
 
         let result = parse_python_file(&file_path).unwrap();
         let local_imports: Vec<_> = result
-            .imports
+            .imports()
             .iter()
-            .filter(|i| i.is_local)
-            .map(|i| i.path.as_str())
+            .filter(|i| i.is_local())
+            .map(|i| i.path())
             .collect();
         let external_imports: Vec<_> = result
-            .imports
+            .imports()
             .iter()
-            .filter(|i| !i.is_local)
-            .map(|i| i.path.as_str())
+            .filter(|i| !i.is_local())
+            .map(|i| i.path())
             .collect();
 
         assert!(local_imports.contains(&"mypackage.module"));
@@ -326,13 +325,21 @@ class _PrivateClass:
         let result = parse_python_file(&file_path).unwrap();
 
         // Check functions
-        assert!(result.functions.contains(&"public_function".to_string()));
-        assert!(!result.functions.contains(&"_private_function".to_string()));
-        assert!(result.functions.contains(&"__dunder_method__".to_string()));
+        assert!(result.functions().contains(&"public_function".to_string()));
+        assert!(
+            !result
+                .functions()
+                .contains(&"_private_function".to_string())
+        );
+        assert!(
+            result
+                .functions()
+                .contains(&"__dunder_method__".to_string())
+        );
 
         // Check classes
-        assert!(result.containers.contains(&"PublicClass".to_string()));
-        assert!(result.containers.contains(&"_PrivateClass".to_string()));
+        assert!(result.containers().contains(&"PublicClass".to_string()));
+        assert!(result.containers().contains(&"_PrivateClass".to_string()));
     }
 
     #[test]
@@ -353,7 +360,7 @@ from typing import (
         let file_path = create_test_file(&temp_dir, "test.py", content);
 
         let result = parse_python_file(&file_path).unwrap();
-        let import_paths: Vec<_> = result.imports.iter().map(|i| i.path.as_str()).collect();
+        let import_paths: Vec<_> = result.imports().iter().map(|i| i.path()).collect();
 
         assert!(import_paths.contains(&"os"));
         assert!(import_paths.contains(&"typing"));
@@ -377,11 +384,11 @@ class OuterClass:
 
         let result = parse_python_file(&file_path).unwrap();
 
-        assert!(result.containers.contains(&"OuterClass".to_string()));
-        assert!(result.containers.contains(&"InnerClass".to_string()));
-        assert!(result.functions.contains(&"outer_method".to_string()));
-        assert!(result.functions.contains(&"inner_method".to_string()));
+        assert!(result.containers().contains(&"OuterClass".to_string()));
+        assert!(result.containers().contains(&"InnerClass".to_string()));
+        assert!(result.functions().contains(&"outer_method".to_string()));
+        assert!(result.functions().contains(&"inner_method".to_string()));
         // local_function is not captured as it's a nested function
-        assert!(!result.functions.contains(&"local_function".to_string()));
+        assert!(!result.functions().contains(&"local_function".to_string()));
     }
 }

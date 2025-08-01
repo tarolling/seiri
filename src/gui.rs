@@ -25,15 +25,25 @@ pub struct SeiriGraph {
     auto_layout: bool,
 
     // Visual settings
-    node_radius: f32,
+    min_node_radius: f32,
+    max_node_radius: f32,
     show_labels: bool,
     show_dependencies: bool,
     layout_strength: f32,
+    
+    // Node size calculation
+    min_loc: u32,
+    max_loc: u32,
 }
 
 impl SeiriGraph {
     pub fn new(graph_nodes: Vec<GraphNode>) -> Self {
         let n = graph_nodes.len();
+        
+        // Calculate min/max LOC
+        let min_loc = graph_nodes.iter().map(|n| n.data().loc()).min().unwrap_or(0);
+        let max_loc = graph_nodes.iter().map(|n| n.data().loc()).max().unwrap_or(0);
+        
         let mut app = Self {
             graph_nodes,
             camera_pos: egui::Vec2::ZERO,
@@ -48,10 +58,13 @@ impl SeiriGraph {
             drag_start_pos: None,
             layout_iterations: 0,
             auto_layout: true,
-            node_radius: 30.0,
+            min_node_radius: 20.0,
+            max_node_radius: 40.0,
             show_labels: true,
             show_dependencies: true,
             layout_strength: 1.0,
+            min_loc,
+            max_loc,
         };
         app.initialize_positions();
         app
@@ -107,11 +120,11 @@ impl SeiriGraph {
             }
 
             // Attraction along edges
-            for edge_file in &self.graph_nodes[i].edges {
+            for edge_file in self.graph_nodes[i].edges() {
                 if let Some(j) = self
                     .graph_nodes
                     .iter()
-                    .position(|n| &n.data.file == edge_file)
+                    .position(|n| n.data().file() == edge_file)
                 {
                     let diff = self.node_positions[j] - self.node_positions[i];
                     let dist = diff.length();
@@ -146,17 +159,17 @@ impl SeiriGraph {
         // Determine if this is an external file (not in our project directory)
         // let is_external = node.data.file.to_string_lossy().contains("/.cargo/") ||
         //                  node.data.file.to_string_lossy().contains("/target/") ||
-        let is_external = !node.data.file.exists();
+        let is_external = !node.data().file().exists();
 
         let base_color = if is_external {
             // External dependencies
-            match node.data.language {
+            match node.data().language() {
                 crate::core::defs::Language::Rust => egui::Color32::from_rgb(160, 120, 100), // Muted rust color
                 crate::core::defs::Language::Python => egui::Color32::from_rgb(100, 150, 200), // Python blue
             }
         } else {
             // Internal project files
-            match node.data.language {
+            match node.data().language() {
                 crate::core::defs::Language::Rust => egui::Color32::from_rgb(222, 165, 132), // Rust orange
                 crate::core::defs::Language::Python => egui::Color32::from_rgb(100, 180, 220), // Python blue
             }
@@ -180,11 +193,11 @@ impl SeiriGraph {
             for (i, node) in self.graph_nodes.iter().enumerate() {
                 let from_pos = self.world_to_screen(self.node_positions[i], canvas_center);
 
-                for edge_file in &node.edges {
+                for edge_file in node.edges() {
                     if let Some(j) = self
                         .graph_nodes
                         .iter()
-                        .position(|n| &n.data.file == edge_file)
+                        .position(|n| n.data().file() == edge_file)
                     {
                         let to_pos = self.world_to_screen(self.node_positions[j], canvas_center);
 
@@ -218,7 +231,13 @@ impl SeiriGraph {
             let screen_pos = egui::pos2(screen_pos.x, screen_pos.y);
 
             // Only draw visible nodes
-            let node_radius = self.node_radius * self.zoom;
+            let base_radius = self.graph_nodes[i].calculate_size(
+                self.min_loc,
+                self.max_loc,
+                self.min_node_radius,
+                self.max_node_radius,
+            );
+            let node_radius = base_radius * self.zoom;
             if !canvas_rect.expand(node_radius).contains(screen_pos) {
                 continue;
             }
@@ -247,7 +266,7 @@ impl SeiriGraph {
 
             // Node label with background for better readability
             if self.show_labels && self.zoom > 0.3 {
-                if let Some(name) = node.data.file.file_stem().and_then(|s| s.to_str()) {
+                if let Some(name) = node.data().file().file_stem().and_then(|s| s.to_str()) {
                     let font_size = (12.0 * self.zoom).clamp(8.0, 16.0);
 
                     // Measure text to create appropriate background
@@ -312,7 +331,13 @@ impl SeiriGraph {
                 self.hovered_node = None;
                 for (i, _) in self.graph_nodes.iter().enumerate() {
                     let dist = (world_mouse - self.node_positions[i]).length();
-                    if dist < self.node_radius {
+                    let node_radius = self.graph_nodes[i].calculate_size(
+                        self.min_loc,
+                        self.max_loc,
+                        self.min_node_radius,
+                        self.max_node_radius,
+                    );
+                    if dist < node_radius {
                         self.hovered_node = Some(i);
                         break;
                     }
@@ -441,12 +466,13 @@ impl eframe::App for SeiriGraph {
                 .default_width(350.0)
                 .show(ctx, |ui| {
                     ui.heading("Node Details");
-                    let node = &self.graph_nodes[selected_idx].data;
+                    let node = &self.graph_nodes[selected_idx].data();
 
                     ui.group(|ui| {
                         ui.strong("File Information");
-                        ui.label(format!("📁 {}", node.file.display()));
-                        ui.label(format!("🔧 {:?}", node.language));
+                        ui.label(format!("📁 {}", node.file().display()));
+                        ui.label(format!("🔧 {:?}", node.language()));
+                        ui.label(format!("📊 {} lines", node.loc()));
                     });
 
                     ui.separator();
@@ -458,15 +484,15 @@ impl eframe::App for SeiriGraph {
                             .graph_nodes
                             .iter()
                             .enumerate()
-                            .filter(|(_, n)| n.edges.contains(&node.file))
+                            .filter(|(_, n)| n.edges().contains(&node.file()))
                             .collect();
-                        let outgoing = &self.graph_nodes[selected_idx].edges;
+                        let outgoing = self.graph_nodes[selected_idx].edges();
 
                         ui.collapsing(format!("📥 Incoming ({})", incoming.len()), |ui| {
                             for (idx, dep_node) in incoming {
                                 let name = dep_node
-                                    .data
-                                    .file
+                                    .data()
+                                    .file()
                                     .file_name()
                                     .and_then(|n| n.to_str())
                                     .unwrap_or("unknown");
@@ -478,8 +504,10 @@ impl eframe::App for SeiriGraph {
 
                         ui.collapsing(format!("📤 Outgoing ({})", outgoing.len()), |ui| {
                             for edge in outgoing {
-                                if let Some(idx) =
-                                    self.graph_nodes.iter().position(|n| &n.data.file == edge)
+                                if let Some(idx) = self
+                                    .graph_nodes
+                                    .iter()
+                                    .position(|n| n.data().file() == edge)
                                 {
                                     let name = edge
                                         .file_name()
@@ -499,22 +527,22 @@ impl eframe::App for SeiriGraph {
                     ui.group(|ui| {
                         ui.strong("Code Structure");
 
-                        if !node.functions.is_empty() {
+                        if !node.functions().is_empty() {
                             ui.collapsing(
-                                format!("🔧 Functions ({})", node.functions.len()),
+                                format!("🔧 Functions ({})", node.functions().len()),
                                 |ui| {
-                                    for func in &node.functions {
+                                    for func in node.functions() {
                                         ui.monospace(func);
                                     }
                                 },
                             );
                         }
 
-                        if !node.containers.is_empty() {
+                        if !node.containers().is_empty() {
                             ui.collapsing(
-                                format!("📦 Containers ({})", node.containers.len()),
+                                format!("📦 Containers ({})", node.containers().len()),
                                 |ui| {
-                                    for container in &node.containers {
+                                    for container in node.containers() {
                                         ui.monospace(container);
                                     }
                                 },
@@ -523,17 +551,17 @@ impl eframe::App for SeiriGraph {
                     });
 
                     // Imports
-                    if !node.imports.is_empty() {
+                    if !node.imports().is_empty() {
                         ui.separator();
                         ui.group(|ui| {
                             ui.strong("Imports");
                             let (local, external): (Vec<_>, Vec<_>) =
-                                node.imports.iter().partition(|imp| imp.is_local);
+                                node.imports().iter().partition(|imp| imp.is_local());
 
                             if !local.is_empty() {
                                 ui.collapsing(format!("🏠 Local ({})", local.len()), |ui| {
                                     for imp in local {
-                                        ui.monospace(&imp.path);
+                                        ui.monospace(imp.path());
                                     }
                                 });
                             }
@@ -541,7 +569,7 @@ impl eframe::App for SeiriGraph {
                             if !external.is_empty() {
                                 ui.collapsing(format!("🌐 External ({})", external.len()), |ui| {
                                     for imp in external {
-                                        ui.monospace(&imp.path);
+                                        ui.monospace(imp.path());
                                     }
                                 });
                             }
