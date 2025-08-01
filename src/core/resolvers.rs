@@ -44,7 +44,7 @@ impl GraphBuilder {
         let mut files_by_language: HashMap<Language, Vec<PathBuf>> = HashMap::new();
         for (file_path, node) in node_map {
             files_by_language
-                .entry(node.language)
+                .entry(*node.language())
                 .or_default()
                 .push(file_path.clone());
         }
@@ -63,12 +63,12 @@ impl GraphBuilder {
             let mut resolved_imports = HashSet::new();
 
             // Use language-specific resolver
-            if let Some(resolver) = self.resolvers.get(&node.language) {
-                for import in &node.imports {
-                    if !import.is_local {
+            if let Some(resolver) = self.resolvers.get(node.language()) {
+                for import in node.imports() {
+                    if !import.is_local() {
                         continue; // Skip non-local imports for now
                     }
-                    if let Some(target_file) = resolver.resolve_import(&import.path, file_path) {
+                    if let Some(target_file) = resolver.resolve_import(import.path(), file_path) {
                         if target_file != *file_path && !resolved_imports.contains(&target_file) {
                             edges.push(target_file.clone());
                             resolved_imports.insert(target_file);
@@ -78,7 +78,7 @@ impl GraphBuilder {
 
                 // Process external references
                 let ext_refs =
-                    resolver.resolve_external_references(&node.external_references, file_path);
+                    resolver.resolve_external_references(node.external_references(), file_path);
                 for target_file in ext_refs {
                     if target_file != *file_path && !resolved_imports.contains(&target_file) {
                         edges.push(target_file.clone());
@@ -87,10 +87,7 @@ impl GraphBuilder {
                 }
             }
 
-            graph_nodes.push(GraphNode {
-                data: node.clone(),
-                edges,
-            });
+            graph_nodes.push(GraphNode::new(node.clone(), edges));
         }
 
         graph_nodes

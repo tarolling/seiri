@@ -45,28 +45,121 @@ impl Language {
 
 #[derive(Debug, Clone)]
 pub struct Import {
-    pub path: String,
-    pub is_local: bool,
+    path: String,
+    is_local: bool,
+}
+
+impl Import {
+    pub fn new(path: String, is_local: bool) -> Self {
+        Import { path, is_local }
+    }
+
+    /// Get the import path
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    /// Check if this import is local (within the same project)
+    /// or external (from another project or library)
+    pub fn is_local(&self) -> bool {
+        self.is_local
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct FileNode {
-    pub file: PathBuf,
-    pub language: Language,
+    file: PathBuf,
+    loc: u32,
+    language: Language,
     /// List of imports with local/external classification
-    pub imports: Vec<Import>,
+    imports: Vec<Import>,
     /// List of function names defined in this file
-    pub functions: Vec<String>,
+    functions: Vec<String>,
     /// List of container names (classes, structs, etc.) defined in this file
-    pub containers: Vec<String>,
+    containers: Vec<String>,
     /// List of references to external functions/containers (as strings)
-    pub external_references: HashSet<String>,
+    external_references: HashSet<String>,
+}
+
+impl FileNode {
+    pub fn new(
+        file: PathBuf,
+        loc: u32,
+        language: Language,
+        imports: Vec<Import>,
+        functions: Vec<String>,
+        containers: Vec<String>,
+        external_references: HashSet<String>,
+    ) -> Self {
+        FileNode {
+            file,
+            loc,
+            language,
+            imports,
+            functions,
+            containers,
+            external_references,
+        }
+    }
+
+    pub fn file(&self) -> &PathBuf {
+        &self.file
+    }
+
+    pub fn loc(&self) -> u32 {
+        self.loc
+    }
+
+    pub fn language(&self) -> &Language {
+        &self.language
+    }
+
+    pub fn imports(&self) -> &Vec<Import> {
+        &self.imports
+    }
+
+    pub fn functions(&self) -> &Vec<String> {
+        &self.functions
+    }
+
+    pub fn containers(&self) -> &Vec<String> {
+        &self.containers
+    }
+
+    pub fn external_references(&self) -> &HashSet<String> {
+        &self.external_references
+    }
 }
 
 /// A node in the project graph, with edges to other nodes it references
 #[derive(Debug, Clone)]
 pub struct GraphNode {
-    pub data: FileNode,
+    data: FileNode,
     /// Edges to other files (by file path)
-    pub edges: Vec<PathBuf>,
+    edges: Vec<PathBuf>,
+}
+
+impl GraphNode {
+    pub fn new(data: FileNode, edges: Vec<PathBuf>) -> Self {
+        GraphNode { data, edges }
+    }
+
+    pub fn data(&self) -> &FileNode {
+        &self.data
+    }
+
+    pub fn edges(&self) -> &Vec<PathBuf> {
+        self.edges.as_ref()
+    }
+
+    /// Calculate the normalized size for this node based on min/max LOC in the graph
+    /// Returns a value between min_size and max_size
+    pub fn calculate_size(&self, min_loc: u32, max_loc: u32, min_size: f32, max_size: f32) -> f32 {
+        if max_loc == min_loc {
+            return (min_size + max_size) / 2.0;
+        }
+        let loc = self.data.loc();
+        let normalized = (loc - min_loc) as f32 / (max_loc - min_loc) as f32;
+        min_size + normalized * (max_size - min_size)
+    }
 }

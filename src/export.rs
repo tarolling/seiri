@@ -8,7 +8,8 @@ use svg::node::element::{Circle, Line, Text, Title};
 
 const CANVAS_WIDTH: f32 = 1200.0;
 const CANVAS_HEIGHT: f32 = 900.0;
-const NODE_RADIUS: f32 = 20.0;
+const MIN_NODE_RADIUS: f32 = 20.0;
+const MAX_NODE_RADIUS: f32 = 40.0;
 const MARGIN: f32 = 50.0;
 
 const PYTHON_COLOR: &str = "#FFD43B";
@@ -25,13 +26,25 @@ pub fn export_graph_as_svg(graph_nodes: &[GraphNode], output_path: &Path) -> Res
     let center_y = CANVAS_HEIGHT / 2.0;
     let n = graph_nodes.len();
 
+    // Calculate min/max LOC for node size normalization
+    let min_loc = graph_nodes
+        .iter()
+        .map(|n| n.data().loc())
+        .min()
+        .unwrap_or(0);
+    let max_loc = graph_nodes
+        .iter()
+        .map(|n| n.data().loc())
+        .max()
+        .unwrap_or(0);
+
     // Calculate node positions
     let mut positions = HashMap::new();
     for (i, node) in graph_nodes.iter().enumerate() {
         let angle = (i as f32) * (2.0 * std::f32::consts::PI / n as f32);
         let x = center_x + radius * angle.cos();
         let y = center_y + radius * angle.sin();
-        positions.insert(&node.data.file, (x, y));
+        positions.insert(node.data().file(), (x, y));
     }
 
     // Create SVG document
@@ -43,9 +56,9 @@ pub fn export_graph_as_svg(graph_nodes: &[GraphNode], output_path: &Path) -> Res
 
     // Add edges first (so they appear under nodes)
     for node in graph_nodes {
-        let (start_x, start_y) = positions.get(&node.data.file).unwrap();
+        let (start_x, start_y) = positions.get(node.data().file()).unwrap();
 
-        for edge in &node.edges {
+        for edge in node.edges() {
             if let Some((end_x, end_y)) = positions.get(edge) {
                 let edge = Line::new()
                     .set("x1", *start_x)
@@ -61,16 +74,17 @@ pub fn export_graph_as_svg(graph_nodes: &[GraphNode], output_path: &Path) -> Res
 
     // Add nodes with labels
     for node in graph_nodes {
-        let (x, y) = positions.get(&node.data.file).unwrap();
+        let (x, y) = positions.get(node.data().file()).unwrap();
+        let radius = node.calculate_size(min_loc, max_loc, MIN_NODE_RADIUS, MAX_NODE_RADIUS);
 
         // Node circle
         let circle = Circle::new()
             .set("cx", *x)
             .set("cy", *y)
-            .set("r", NODE_RADIUS)
+            .set("r", radius)
             .set(
                 "fill",
-                match node.data.language {
+                match node.data().language() {
                     crate::core::defs::Language::Rust => RUST_COLOR,
                     crate::core::defs::Language::Python => PYTHON_COLOR,
                 },
@@ -79,12 +93,12 @@ pub fn export_graph_as_svg(graph_nodes: &[GraphNode], output_path: &Path) -> Res
             .set("stroke-width", 2);
 
         // Add title for hover tooltip
-        let title = Title::new(node.data.file.file_name().unwrap().to_str().unwrap());
+        let title = Title::new(node.data().file().file_name().unwrap().to_str().unwrap());
         let circle_with_title = circle.add(title);
         document = document.add(circle_with_title);
 
         // Node label
-        if let Some(name) = node.data.file.file_stem() {
+        if let Some(name) = node.data().file().file_stem() {
             if let Some(name_str) = name.to_str() {
                 let label = Text::new(name_str)
                     .set("x", *x)

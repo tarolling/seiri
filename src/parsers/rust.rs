@@ -59,6 +59,7 @@ fn extract_use_path(node: tree_sitter::Node, code: &str) -> String {
 
 pub fn parse_rust_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
     let code = fs::read_to_string(&path).ok()?;
+    let loc = code.lines().count() as u32;
 
     let mut parser = Parser::new();
     parser
@@ -84,10 +85,7 @@ pub fn parse_rust_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
 
                 if !import_path.is_empty() {
                     let is_local = is_local_import(&import_path, path.as_ref());
-                    imports.push(Import {
-                        path: import_path,
-                        is_local,
-                    });
+                    imports.push(Import::new(import_path, is_local));
                 }
             }
             "mod_item" => {
@@ -106,10 +104,7 @@ pub fn parse_rust_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
 
                 // Only add as import if it's a declaration (has semicolon)
                 if !mod_name.is_empty() && is_declaration {
-                    imports.push(Import {
-                        path: mod_name,
-                        is_local: true,
-                    });
+                    imports.push(Import::new(mod_name, true));
                 }
             }
             "function_item" => {
@@ -143,12 +138,13 @@ pub fn parse_rust_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
         }
     }
 
-    Some(FileNode {
-        file: path.as_ref().to_path_buf(),
-        language: Language::Rust,
+    Some(FileNode::new(
+        path.as_ref().to_path_buf(),
+        loc,
+        Language::Rust,
         imports,
         functions,
         containers,
         external_references,
-    })
+    ))
 }
