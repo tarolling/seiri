@@ -31,11 +31,12 @@ cargo build --release
 Provide a path to the project you want to analyze, and optionally specify to produce a visualization and/or a JSON file containing all extracted information.
 
 ```sh
-seiri <path> [gui] [-v|--verbose]
+seiri <path> [gui|<export_path>] [-v|--verbose]
 ```
 
 * `<path>` - File or directory to analyze
 * `gui` - (optional) Launch visualization
+* `<export_path>` - (optional) Export graph to specified path; currently support `SVG` file exports
 * `-v`/`--verbose` - Show detailed logging about file detection and parsing
 
 ## Supported Languages
