@@ -30,7 +30,7 @@ pub struct SeiriGraph {
     show_labels: bool,
     show_dependencies: bool,
     layout_strength: f32,
-    
+
     // Node size calculation
     min_loc: u32,
     max_loc: u32,
@@ -39,11 +39,19 @@ pub struct SeiriGraph {
 impl SeiriGraph {
     pub fn new(graph_nodes: Vec<GraphNode>) -> Self {
         let n = graph_nodes.len();
-        
+
         // Calculate min/max LOC
-        let min_loc = graph_nodes.iter().map(|n| n.data().loc()).min().unwrap_or(0);
-        let max_loc = graph_nodes.iter().map(|n| n.data().loc()).max().unwrap_or(0);
-        
+        let min_loc = graph_nodes
+            .iter()
+            .map(|n| n.data().loc())
+            .min()
+            .unwrap_or(0);
+        let max_loc = graph_nodes
+            .iter()
+            .map(|n| n.data().loc())
+            .max()
+            .unwrap_or(0);
+
         let mut app = Self {
             graph_nodes,
             camera_pos: egui::Vec2::ZERO,
@@ -484,7 +492,7 @@ impl eframe::App for SeiriGraph {
                             .graph_nodes
                             .iter()
                             .enumerate()
-                            .filter(|(_, n)| n.edges().contains(&node.file()))
+                            .filter(|(_, n)| n.edges().contains(node.file()))
                             .collect();
                         let outgoing = self.graph_nodes[selected_idx].edges();
 

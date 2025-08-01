@@ -149,7 +149,7 @@ impl GraphNode {
     }
 
     pub fn edges(&self) -> &Vec<PathBuf> {
-        &self.edges.as_ref()
+        self.edges.as_ref()
     }
 
     /// Calculate the normalized size for this node based on min/max LOC in the graph

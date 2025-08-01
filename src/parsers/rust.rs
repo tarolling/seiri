@@ -5,17 +5,6 @@ use std::path::Path;
 use tree_sitter::Parser;
 use tree_sitter_rust;
 
-/// Extracts the lines of code (LOC) from a Rust file
-pub trait Loc {
-    fn loc(&self) -> usize;
-}
-
-impl Loc for FileNode {
-    fn loc(&self) -> usize {
-        self.imports().len() + self.functions().len() + self.containers().len()
-    }
-}
-
 /// Helper to determine if an import is local (starts with crate/self/super or current mod)
 fn is_local_import(import_path: &str, file_path: &Path) -> bool {
     import_path.starts_with("crate::")

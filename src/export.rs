@@ -27,8 +27,16 @@ pub fn export_graph_as_svg(graph_nodes: &[GraphNode], output_path: &Path) -> Res
     let n = graph_nodes.len();
 
     // Calculate min/max LOC for node size normalization
-    let min_loc = graph_nodes.iter().map(|n| n.data().loc()).min().unwrap_or(0);
-    let max_loc = graph_nodes.iter().map(|n| n.data().loc()).max().unwrap_or(0);
+    let min_loc = graph_nodes
+        .iter()
+        .map(|n| n.data().loc())
+        .min()
+        .unwrap_or(0);
+    let max_loc = graph_nodes
+        .iter()
+        .map(|n| n.data().loc())
+        .max()
+        .unwrap_or(0);
 
     // Calculate node positions
     let mut positions = HashMap::new();
