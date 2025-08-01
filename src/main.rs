@@ -227,7 +227,7 @@ mod tests {
         let temp_file = temp_dir.path().join("test_file.txt");
         File::create(&temp_file).unwrap();
 
-        let result = run(temp_file, Some("output.txt".to_string()), false);
+        let result = run(temp_file, None, false);
 
         assert!(result.is_ok());
     }
@@ -236,11 +236,7 @@ mod tests {
     fn test_existing_directory() {
         let temp_dir = TempDir::new().unwrap();
 
-        let result = run(
-            temp_dir.path().to_path_buf(),
-            Some("output.txt".to_string()),
-            false,
-        );
+        let result = run(temp_dir.path().to_path_buf(), None, false);
 
         assert!(result.is_ok());
     }
@@ -251,7 +247,7 @@ mod tests {
         let temp_file = temp_dir.path().join("test.rs");
         File::create(&temp_file).unwrap();
 
-        let result = run(temp_file, Some("output.txt".to_string()), true);
+        let result = run(temp_file, None, true);
 
         assert!(result.is_ok());
     }
