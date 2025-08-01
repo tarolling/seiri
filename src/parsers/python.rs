@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use tree_sitter::Parser;
-use tree_sitter_python;
+use tree_sitter_python as ts_python;
 
 /// Helper function to get node text
 fn get_text(n: tree_sitter::Node, code: &str) -> String {
@@ -138,7 +138,7 @@ pub fn parse_python_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
 
     let mut parser = Parser::new();
     parser
-        .set_language(&tree_sitter_python::LANGUAGE.into())
+        .set_language(&ts_python::LANGUAGE.into())
         .expect("Error loading Python grammar");
     let tree = parser.parse(&code, None)?;
     let root_node = tree.root_node();
@@ -390,5 +390,31 @@ class OuterClass:
         assert!(result.functions().contains(&"inner_method".to_string()));
         // local_function is not captured as it's a nested function
         assert!(!result.functions().contains(&"local_function".to_string()));
+    }
+
+        #[test]
+    fn test_lines_of_code() {
+        let temp_dir = TempDir::new().unwrap();
+        let content = r#"# This is a comment
+import os
+import sys
+
+def example_function():
+    # Another comment
+    print("Hello, World!")  # Inline comment
+
+def another_function():
+    pass
+
+class ExampleClass:
+    def method(self):
+        pass
+"#;
+        let file_path = create_test_file(&temp_dir, "test.py", content);
+
+        let result = parse_python_file(&file_path).unwrap();
+        
+        // Count should include empty lines and comments
+        assert_eq!(result.loc(), 14);
     }
 }
