@@ -138,7 +138,6 @@ fn run(path: PathBuf, output: Option<String>, verbose: bool) -> Result<(), Strin
     let graph_nodes = graph_builder.build_graph_edges(&node_map, &project_root);
 
     if verbose {
-        // Print resolved connections
         println!("\nResolved {} nodes with connections:", graph_nodes.len());
         for gnode in &graph_nodes {
             println!(

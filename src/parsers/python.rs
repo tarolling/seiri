@@ -10,7 +10,7 @@ fn get_text(n: tree_sitter::Node, code: &str) -> String {
     n.utf8_text(code.as_bytes()).unwrap_or("").to_string()
 }
 
-/// Helper to determine if an import is local
+/// Determine if an import is local
 fn is_local_import(import_path: &str, file_path: &Path) -> bool {
     // In Python, local imports are typically relative (starting with .) or
     // match the project's package structure
@@ -134,7 +134,7 @@ fn extract_import_path(node: tree_sitter::Node, code: &str) -> Vec<String> {
 
 pub fn parse_python_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
     let code = fs::read_to_string(&path).ok()?;
-    let loc = code.lines().count() as u32;
+    let loc = code.matches("\n").count() as u32 + 1; // count number of newlines bc code.lines() has failed me
 
     let mut parser = Parser::new();
     parser
@@ -188,21 +188,16 @@ pub fn parse_python_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
                 }
             }
             "class_definition" => {
-                // Get class name
                 if let Some(name_node) = node
                     .children(&mut cursor)
                     .find(|n| n.kind() == "identifier")
                 {
-                    let name = name_node
-                        .utf8_text(code.as_bytes())
-                        .unwrap_or("")
-                        .to_string();
-                    containers.push(name);
+                    containers.push(get_text(name_node, &code));
                 }
             }
             "attribute" | "call" => {
                 // Collect external references from attribute access and function calls
-                let text = node.utf8_text(code.as_bytes()).unwrap_or("").to_string();
+                let text = get_text(node, &code);
                 if !text.starts_with('_') {
                     // Only include public attributes/calls
                     external_references.insert(text);
@@ -392,7 +387,7 @@ class OuterClass:
         assert!(!result.functions().contains(&"local_function".to_string()));
     }
 
-        #[test]
+    #[test]
     fn test_lines_of_code() {
         let temp_dir = TempDir::new().unwrap();
         let content = r#"# This is a comment
@@ -413,8 +408,7 @@ class ExampleClass:
         let file_path = create_test_file(&temp_dir, "test.py", content);
 
         let result = parse_python_file(&file_path).unwrap();
-        
-        // Count should include empty lines and comments
-        assert_eq!(result.loc(), 14);
+
+        assert_eq!(result.loc(), 15);
     }
 }
