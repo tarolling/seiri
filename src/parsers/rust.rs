@@ -25,7 +25,7 @@ fn is_local_import(import_path: &str, file_path: &Path) -> bool {
         }
 }
 
-/// Returns the qualifed name of the scoped identifier
+// Returns the qualifed name of the scoped identifier
 // fn parse_scoped_identifier(node: tree_sitter::Node, code: &str) -> str {
 //     let scoped_id
 //     let mut cursor = node.walk();
@@ -49,10 +49,10 @@ fn parse_use_list(node: tree_sitter::Node, code: &str, _prefix: &str) -> Vec<Str
     for child in node.children(&mut cursor) {
         match child.kind() {
             "identifier" | "scoped_identifier" => {
-                imports.push(get_text(child, &code));
+                imports.push(get_text(child, code));
             }
             "scoped_use_list" => {
-                for s in parse_scoped_use_list(child, &code, "") {
+                for s in parse_scoped_use_list(child, code, "") {
                     imports.push(s.to_string());
                 }
             }
@@ -71,15 +71,15 @@ fn parse_scoped_use_list(node: tree_sitter::Node, code: &str, prefix: &str) -> V
     for child in node.children(&mut cursor) {
         match child.kind() {
             "crate" | "identifier" | "scoped_identifier" => {
-                new_prefix.push_str(&(get_text(child, &code) + "::"));
+                new_prefix.push_str(&(get_text(child, code) + "::"));
             }
             "use_list" => {
-                parse_use_list(child, &code, &new_prefix)
+                parse_use_list(child, code, &new_prefix)
                     .iter()
                     .for_each(|s| imports.push(new_prefix.clone() + s));
             }
             "scoped_use_list" => {
-                parse_scoped_use_list(child, &code, &new_prefix)
+                parse_scoped_use_list(child, code, &new_prefix)
                     .iter()
                     .for_each(|s| imports.push(new_prefix.clone() + s));
             }
@@ -100,10 +100,10 @@ fn extract_paths_from_use_clause(node: tree_sitter::Node, code: &str, paths: &mu
                 continue;
             }
             "scoped_identifier" => {
-                paths.push(get_text(child, &code));
+                paths.push(get_text(child, code));
             }
             "scoped_use_list" => {
-                parse_scoped_use_list(child, &code, "")
+                parse_scoped_use_list(child, code, "")
                     .iter()
                     .for_each(|s| paths.push(s.to_string()));
             }
@@ -113,7 +113,7 @@ fn extract_paths_from_use_clause(node: tree_sitter::Node, code: &str, paths: &mu
                     && (import_path.kind() == "identifier"
                         || import_path.kind() == "scoped_identifier")
                 {
-                    paths.push(get_text(import_path, &code));
+                    paths.push(get_text(import_path, code));
                 }
             }
             // "use_wildcard" => {
@@ -145,7 +145,7 @@ fn parser_loop<P: AsRef<Path>>(
     while let Some(node) = stack.pop() {
         match node.kind() {
             "use_declaration" => {
-                let import_paths = extract_use_paths(node, &code);
+                let import_paths = extract_use_paths(node, code);
                 for import_path in import_paths {
                     if !import_path.is_empty() {
                         let is_local = is_local_import(&import_path, path.as_ref());
@@ -160,7 +160,7 @@ fn parser_loop<P: AsRef<Path>>(
 
                 for child in node.children(&mut cursor) {
                     if child.kind() == "identifier" {
-                        mod_name = get_text(child, &code);
+                        mod_name = get_text(child, code);
                     } else if child.kind() == ";" {
                         // If we find a semicolon, this is a module declaration (not inline definition)
                         is_declaration = true;
@@ -177,7 +177,7 @@ fn parser_loop<P: AsRef<Path>>(
                 let mut cursor = node.walk();
                 for child in node.children(&mut cursor) {
                     if child.kind() == "identifier" {
-                        let name = get_text(child, &code);
+                        let name = get_text(child, code);
                         functions.push(name);
                     }
                 }
@@ -186,14 +186,14 @@ fn parser_loop<P: AsRef<Path>>(
                 let mut cursor = node.walk();
                 for child in node.children(&mut cursor) {
                     if child.kind() == "type_identifier" {
-                        let name = get_text(child, &code);
+                        let name = get_text(child, code);
                         containers.push(name);
                     }
                 }
             }
             // For external references, look for scoped identifiers (e.g., foo::bar)
             "scoped_identifier" => {
-                let text = get_text(node, &code);
+                let text = get_text(node, code);
                 external_references.insert(text);
             }
             _ => {}
