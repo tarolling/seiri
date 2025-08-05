@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 pub mod python;
 pub mod rust;
+pub mod typescript;
 
 /// Module resolution trait
 pub trait LanguageResolver {

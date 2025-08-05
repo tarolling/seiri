@@ -1,7 +1,8 @@
-# seiri (整理)
+# <center>seiri (整理)</center>
 
 [![dependency status](https://deps.rs/repo/github/tarolling/seiri/status.svg)](https://deps.rs/repo/github/tarolling/seiri)
 [![CI](https://github.com/tarolling/seiri/actions/workflows/ci.yml/badge.svg)](https://github.com/tarolling/seiri/actions/workflows/ci.yml)
+[![Build](https://github.com/tarolling/seiri/actions/workflows/build.yml/badge.svg)](https://github.com/tarolling/seiri/actions/workflows/build.yml)
 
 A platform-agnostic project visualization tool.
 
@@ -43,7 +44,8 @@ seiri <path> [gui|<export_path>] [-v|--verbose]
 
 * Rust
 * Python
-* C/C++ (planned for v0.2.2)
+* TypeScript
+* C/C++ (planned for v0.2.4)
 
 ## Contributing
 
