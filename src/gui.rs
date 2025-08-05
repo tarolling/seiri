@@ -163,32 +163,21 @@ impl SeiriGraph {
 
     fn get_node_color(&self, index: usize) -> egui::Color32 {
         let node = &self.graph_nodes[index];
-
-        // Determine if this is an external file (not in our project directory)
-        // let is_external = node.data.file.to_string_lossy().contains("/.cargo/") ||
-        //                  node.data.file.to_string_lossy().contains("/target/") ||
         let is_external = !node.data().file().exists();
 
+        // change base color based on internal or external node
         let base_color = if is_external {
-            // External dependencies
-            match node.data().language() {
-                crate::core::defs::Language::Rust => egui::Color32::from_rgb(160, 120, 100), // Muted rust color
-                crate::core::defs::Language::Python => egui::Color32::from_rgb(100, 150, 200), // Python blue
-            }
+            egui::Color32::from_hex(node.data().language().color())
         } else {
-            // Internal project files
-            match node.data().language() {
-                crate::core::defs::Language::Rust => egui::Color32::from_rgb(222, 165, 132), // Rust orange
-                crate::core::defs::Language::Python => egui::Color32::from_rgb(100, 180, 220), // Python blue
-            }
+            Ok(egui::Color32::from_hex(node.data().language().color()).expect("Error parsing color hex code").gamma_multiply(0.5)) // Internal project files
         };
 
         if Some(index) == self.selected_node {
-            egui::Color32::from_rgb(255, 200, 100) // Bright orange for selected
+            egui::Color32::ORANGE
         } else if Some(index) == self.hovered_node {
-            egui::Color32::from_rgb(180, 220, 255) // Light blue for hovered
+            egui::Color32::LIGHT_BLUE
         } else {
-            base_color
+            base_color.expect("Error parsing color hex code")
         }
     }
 

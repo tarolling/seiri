@@ -1,4 +1,4 @@
-use crate::core::defs::GraphNode;
+use crate::core::defs::{GraphNode, Language};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
@@ -11,9 +11,6 @@ const CANVAS_HEIGHT: f32 = 900.0;
 const MIN_NODE_RADIUS: f32 = 20.0;
 const MAX_NODE_RADIUS: f32 = 40.0;
 const MARGIN: f32 = 50.0;
-
-const PYTHON_COLOR: &str = "#FFD43B";
-const RUST_COLOR: &str = "#DEA584";
 
 pub fn export_graph_as_svg(graph_nodes: &[GraphNode], output_path: &Path) -> Result<(), String> {
     if graph_nodes.is_empty() {
@@ -84,10 +81,7 @@ pub fn export_graph_as_svg(graph_nodes: &[GraphNode], output_path: &Path) -> Res
             .set("r", radius)
             .set(
                 "fill",
-                match node.data().language() {
-                    crate::core::defs::Language::Rust => RUST_COLOR,
-                    crate::core::defs::Language::Python => PYTHON_COLOR,
-                },
+                node.data().language().color()
             )
             .set("stroke", "black")
             .set("stroke-width", 2);
@@ -117,9 +111,8 @@ pub fn export_graph_as_svg(graph_nodes: &[GraphNode], output_path: &Path) -> Res
     let legend_y = MARGIN;
     let legend_x = MARGIN;
     let legend_spacing = 25.0;
-    let langs = [("Rust", RUST_COLOR), ("Python", PYTHON_COLOR)];
 
-    for (i, (lang, color)) in langs.iter().enumerate() {
+    for (i, lang) in [Language::Python, Language::Rust, Language::TypeScript].iter().enumerate() {
         let y = legend_y + (i as f32 * legend_spacing);
 
         // Legend dot
@@ -127,13 +120,13 @@ pub fn export_graph_as_svg(graph_nodes: &[GraphNode], output_path: &Path) -> Res
             .set("cx", legend_x)
             .set("cy", y)
             .set("r", 6)
-            .set("fill", *color)
+            .set("fill", lang.color())
             .set("stroke", "black")
             .set("stroke-width", 1);
         document = document.add(dot);
 
         // Legend text
-        let text = Text::new(*lang)
+        let text = Text::new(lang.to_string())
             .set("x", legend_x + 15.0)
             .set("y", y)
             .set("dominant-baseline", "middle")

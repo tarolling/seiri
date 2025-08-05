@@ -4,16 +4,18 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Language {
-    Rust,
     Python,
+    Rust,
+    TypeScript
 }
 
 impl Language {
     /// Returns all file extensions that indicate this language
     pub fn extensions(&self) -> &'static [&'static str] {
         match self {
-            Language::Rust => &["rs"],
             Language::Python => &["py"],
+            Language::Rust => &["rs"],
+            Language::TypeScript => &["ts"]
         }
     }
 
@@ -21,8 +23,7 @@ impl Language {
     pub fn from_file(filename: &str) -> Option<Self> {
         static EXTENSION_MAP: Lazy<HashMap<&'static str, Language>> = Lazy::new(|| {
             let mut map = HashMap::new();
-            // Populate with all languages and their indicators
-            for lang in &[Language::Rust] {
+            for lang in &[Language::Python, Language::Rust, Language::TypeScript] {
                 for extension in lang.extensions() {
                     map.insert(*extension, *lang);
                 }
@@ -34,11 +35,20 @@ impl Language {
         EXTENSION_MAP.get(ext).copied()
     }
 
-    #[allow(clippy::wrong_self_convention, dead_code)]
     pub fn to_string(&self) -> &'static str {
         match self {
-            Language::Rust => "Rust",
             Language::Python => "Python",
+            Language::Rust => "Rust",
+            Language::TypeScript => "TypeScript"
+        }
+    }
+
+    /// Returns the color associated with this language (in hex format)
+    pub fn color(&self) -> &'static str {
+        match self {
+            Language::Python => "#FFD43B",
+            Language::Rust => "#DEA584",
+            Language::TypeScript => "#007ACC",
         }
     }
 }

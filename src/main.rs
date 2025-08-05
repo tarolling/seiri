@@ -8,8 +8,7 @@ mod parsers;
 use clap::Parser;
 use core::defs::{FileNode, Language};
 use core::resolvers::GraphBuilder;
-use parsers::python::parse_python_file;
-use parsers::rust::parse_rust_file;
+use parsers::{python::parse_python_file, rust::parse_rust_file, typescript::parse_typescript_file};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use walkdir::WalkDir;
@@ -114,6 +113,14 @@ fn run(path: PathBuf, output: Option<String>, verbose: bool) -> Result<(), Strin
     let mut node_map: HashMap<PathBuf, FileNode> = HashMap::new();
     for (file_path, lang) in &language_files {
         match lang {
+            Language::Python => {
+                if let Some(node) = parse_python_file(file_path) {
+                    if verbose {
+                        println!("Parsed Python file: {}", file_path.display());
+                    }
+                    node_map.insert(file_path.clone(), node);
+                }
+            }
             Language::Rust => {
                 if let Some(node) = parse_rust_file(file_path) {
                     if verbose {
@@ -122,10 +129,10 @@ fn run(path: PathBuf, output: Option<String>, verbose: bool) -> Result<(), Strin
                     node_map.insert(file_path.clone(), node);
                 }
             }
-            Language::Python => {
-                if let Some(node) = parse_python_file(file_path) {
+            Language::TypeScript => {
+                if let Some(node) = parse_typescript_file(file_path) {
                     if verbose {
-                        println!("Parsed Python file: {}", file_path.display());
+                        println!("Parsed TypeScript file: {}", file_path.display());
                     }
                     node_map.insert(file_path.clone(), node);
                 }
