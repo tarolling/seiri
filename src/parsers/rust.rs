@@ -25,16 +25,6 @@ fn is_local_import(import_path: &str, file_path: &Path) -> bool {
         }
 }
 
-// Returns the qualifed name of the scoped identifier
-// fn parse_scoped_identifier(node: tree_sitter::Node, code: &str) -> str {
-//     let scoped_id
-//     let mut cursor = node.walk();
-//     for child in node.children(&mut cursor) {
-
-//     }
-
-// }
-
 /// Extract all import paths from a use declaration, handling use lists
 fn extract_use_paths(node: tree_sitter::Node, code: &str) -> Vec<String> {
     let mut paths = Vec::new();
@@ -116,12 +106,6 @@ fn extract_paths_from_use_clause(node: tree_sitter::Node, code: &str, paths: &mu
                     paths.push(get_text(import_path, code));
                 }
             }
-            // "use_wildcard" => {
-            //     // Handle `foo::*` - just add the prefix
-            //     if !prefix.is_empty() {
-            //         paths.push(format!("{}::*", prefix));
-            //     }
-            // }
             _ => {}
         }
     }
