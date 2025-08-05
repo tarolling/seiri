@@ -169,7 +169,9 @@ impl SeiriGraph {
         let base_color = if is_external {
             egui::Color32::from_hex(node.data().language().color())
         } else {
-            Ok(egui::Color32::from_hex(node.data().language().color()).expect("Error parsing color hex code").gamma_multiply(0.5)) // Internal project files
+            Ok(egui::Color32::from_hex(node.data().language().color())
+                .expect("Error parsing color hex code")
+                .gamma_multiply(0.5)) // Internal project files
         };
 
         if Some(index) == self.selected_node {

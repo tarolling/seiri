@@ -79,10 +79,7 @@ pub fn export_graph_as_svg(graph_nodes: &[GraphNode], output_path: &Path) -> Res
             .set("cx", *x)
             .set("cy", *y)
             .set("r", radius)
-            .set(
-                "fill",
-                node.data().language().color()
-            )
+            .set("fill", node.data().language().color())
             .set("stroke", "black")
             .set("stroke-width", 2);
 
@@ -112,7 +109,10 @@ pub fn export_graph_as_svg(graph_nodes: &[GraphNode], output_path: &Path) -> Res
     let legend_x = MARGIN;
     let legend_spacing = 25.0;
 
-    for (i, lang) in [Language::Python, Language::Rust, Language::TypeScript].iter().enumerate() {
+    for (i, lang) in [Language::Python, Language::Rust, Language::TypeScript]
+        .iter()
+        .enumerate()
+    {
         let y = legend_y + (i as f32 * legend_spacing);
 
         // Legend dot

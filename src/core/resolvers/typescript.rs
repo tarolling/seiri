@@ -1,7 +1,7 @@
+use super::super::defs::Language;
 use super::LanguageResolver;
 use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
-use super::super::defs::Language;
 
 pub struct TypeScriptResolver;
 

@@ -8,7 +8,9 @@ mod parsers;
 use clap::Parser;
 use core::defs::{FileNode, Language};
 use core::resolvers::GraphBuilder;
-use parsers::{python::parse_python_file, rust::parse_rust_file, typescript::parse_typescript_file};
+use parsers::{
+    python::parse_python_file, rust::parse_rust_file, typescript::parse_typescript_file,
+};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use walkdir::WalkDir;

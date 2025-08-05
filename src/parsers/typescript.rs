@@ -142,8 +142,16 @@ import D from "lib-d"; // external
         let imports = result.imports();
 
         assert!(imports.iter().any(|i| i.path() == "lib-a" && !i.is_local()));
-        assert!(imports.iter().any(|i| i.path() == "./local-b" && i.is_local()));
-        assert!(imports.iter().any(|i| i.path() == "../parent/local-c" && i.is_local()));
+        assert!(
+            imports
+                .iter()
+                .any(|i| i.path() == "./local-b" && i.is_local())
+        );
+        assert!(
+            imports
+                .iter()
+                .any(|i| i.path() == "../parent/local-c" && i.is_local())
+        );
         assert!(imports.iter().any(|i| i.path() == "lib-d" && !i.is_local()));
         assert_eq!(imports.len(), 4);
     }
@@ -194,7 +202,11 @@ export * from "lib-b";
         let result = parse_typescript_file(&file_path).unwrap();
         let imports = result.imports();
 
-        assert!(imports.iter().any(|i| i.path() == "./local-a" && i.is_local()));
+        assert!(
+            imports
+                .iter()
+                .any(|i| i.path() == "./local-a" && i.is_local())
+        );
         assert!(imports.iter().any(|i| i.path() == "lib-b" && !i.is_local()));
         assert_eq!(imports.len(), 2);
     }
@@ -208,7 +220,7 @@ export * from "lib-b";
         let result = parse_typescript_file(&file_path).unwrap();
         assert_eq!(result.loc(), 3);
     }
-    
+
     #[test]
     fn test_empty_file() {
         let temp_dir = TempDir::new().unwrap();
