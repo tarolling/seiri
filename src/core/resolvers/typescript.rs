@@ -40,7 +40,7 @@ impl TypeScriptResolver {
         // check for index file in directory (e.g., ./foo/index.ts)
         if normalized_path.is_dir() {
             for ext in Language::TypeScript.extensions() {
-                let index_path = normalized_path.join(format!("index.{}", ext));
+                let index_path = normalized_path.join(format!("index.{ext}"));
                 if index_path.is_file() {
                     return Some(index_path);
                 }

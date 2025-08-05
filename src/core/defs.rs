@@ -35,6 +35,7 @@ impl Language {
         EXTENSION_MAP.get(ext).copied()
     }
 
+    #[allow(clippy::wrong_self_convention)]
     pub fn to_string(&self) -> &'static str {
         match self {
             Language::Python => "Python",
