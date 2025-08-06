@@ -1,5 +1,7 @@
 use crate::core::defs::{FileNode, GraphNode, Language};
+use crate::core::resolvers::python::PythonResolver;
 use crate::core::resolvers::rust::RustResolver;
+use crate::core::resolvers::typescript::TypeScriptResolver;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -31,7 +33,9 @@ pub struct GraphBuilder {
 impl GraphBuilder {
     pub fn new() -> Self {
         let mut resolvers: HashMap<Language, Box<dyn LanguageResolver>> = HashMap::new();
+        resolvers.insert(Language::Rust, Box::new(PythonResolver::new()));
         resolvers.insert(Language::Rust, Box::new(RustResolver::new()));
+        resolvers.insert(Language::Rust, Box::new(TypeScriptResolver::new()));
         Self { resolvers }
     }
 
