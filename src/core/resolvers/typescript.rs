@@ -3,7 +3,6 @@ use crate::core::defs::Language;
 use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
 
-#[derive(Default)]
 pub struct TypeScriptResolver;
 
 impl TypeScriptResolver {
