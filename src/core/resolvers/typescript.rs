@@ -8,7 +8,7 @@ pub struct TypeScriptResolver;
 
 impl TypeScriptResolver {
     pub fn new() -> Self {
-        Self::default()
+        Self
     }
 
     /// Resolves a relative import path into a full PathBuf
