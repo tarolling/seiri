@@ -33,7 +33,7 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Install Rust toolchain
-      uses: actions-rs/toolchain@v1
+      uses: actions-rust-lang/setup-rust-toolchain@fb51252c7ba57d633bc668f941da052e410add48 # v1.13.0
       with:
         toolchain: stable
         target: ${{ matrix.target }}
@@ -63,7 +63,7 @@ jobs:
         cd -
 
     - name: Release
-      uses: softprops/action-gh-release@v2
+      uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
       with:
         files: ${{ matrix.asset_name }}.${{ matrix.archive_ext }}
       env:
