@@ -10,7 +10,6 @@ pub struct SeiriGraph {
 
     // Node layout
     node_positions: Vec<egui::Vec2>,
-    node_velocities: Vec<egui::Vec2>,
 
     // Interaction state
     selected_node: Option<usize>,
@@ -29,7 +28,6 @@ pub struct SeiriGraph {
     max_node_radius: f32,
     show_labels: bool,
     show_dependencies: bool,
-    layout_strength: f32,
 
     // Node size calculation
     min_loc: u32,
@@ -57,7 +55,6 @@ impl SeiriGraph {
             camera_pos: egui::Vec2::ZERO,
             zoom: 1.0,
             node_positions: vec![egui::Vec2::ZERO; n],
-            node_velocities: vec![egui::Vec2::ZERO; n],
             selected_node: None,
             hovered_node: None,
             dragging_node: None,
@@ -70,7 +67,6 @@ impl SeiriGraph {
             max_node_radius: 40.0,
             show_labels: true,
             show_dependencies: true,
-            layout_strength: 1.0,
             min_loc,
             max_loc,
         };
@@ -90,67 +86,6 @@ impl SeiriGraph {
             let angle = i as f32 * std::f32::consts::TAU / n as f32;
             self.node_positions[i] = egui::vec2(angle.cos() * radius, angle.sin() * radius);
         }
-    }
-
-    fn apply_force_layout(&mut self) {
-        if !self.auto_layout || self.graph_nodes.len() < 2 {
-            return;
-        }
-
-        let dt = 0.02;
-        let damping = 0.9;
-        let repulsion_strength = 8000.0 * self.layout_strength;
-        let attraction_strength = 0.1 * self.layout_strength;
-        let center_attraction = 0.001;
-
-        // Reset velocities if dragging
-        if let Some(drag_idx) = self.dragging_node {
-            self.node_velocities[drag_idx] = egui::Vec2::ZERO;
-        }
-
-        // Apply forces
-        for i in 0..self.graph_nodes.len() {
-            if Some(i) == self.dragging_node {
-                continue;
-            }
-
-            let mut force = egui::Vec2::ZERO;
-
-            // Repulsion from other nodes
-            for j in 0..self.graph_nodes.len() {
-                if i == j {
-                    continue;
-                }
-                let diff = self.node_positions[i] - self.node_positions[j];
-                let dist_sq = diff.length_sq().max(100.0); // Avoid division by zero
-                let repulsion = repulsion_strength / dist_sq;
-                force += diff.normalized() * repulsion;
-            }
-
-            // Attraction along edges
-            for edge_file in self.graph_nodes[i].edges() {
-                if let Some(j) = self
-                    .graph_nodes
-                    .iter()
-                    .position(|n| n.data().file() == edge_file)
-                {
-                    let diff = self.node_positions[j] - self.node_positions[i];
-                    let dist = diff.length();
-                    let target_dist = 120.0;
-                    let spring_force = (dist - target_dist) * attraction_strength;
-                    force += diff.normalized() * spring_force;
-                }
-            }
-
-            // Gentle center attraction
-            force -= self.node_positions[i] * center_attraction;
-
-            // Update velocity and position
-            self.node_velocities[i] = (self.node_velocities[i] + force * dt) * damping;
-            self.node_positions[i] += self.node_velocities[i] * dt;
-        }
-
-        self.layout_iterations += 1;
     }
 
     fn world_to_screen(&self, world_pos: egui::Vec2, canvas_center: egui::Vec2) -> egui::Vec2 {
@@ -445,11 +380,6 @@ impl eframe::App for SeiriGraph {
                 ui.checkbox(&mut self.show_dependencies, "Show Dependencies");
 
                 ui.separator();
-                ui.add(
-                    egui::Slider::new(&mut self.layout_strength, 0.1..=2.0).text("Layout Force"),
-                );
-
-                ui.separator();
                 ui.label(format!(
                     "Nodes: {} | Zoom: {:.1}x",
                     self.graph_nodes.len(),
@@ -591,7 +521,6 @@ impl eframe::App for SeiriGraph {
                 return;
             }
 
-            self.apply_force_layout();
             self.handle_graph_interaction(ui, canvas_rect);
             self.draw_graph(ui, canvas_rect);
 
