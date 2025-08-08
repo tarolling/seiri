@@ -33,9 +33,9 @@ pub struct GraphBuilder {
 impl GraphBuilder {
     pub fn new() -> Self {
         let mut resolvers: HashMap<Language, Box<dyn LanguageResolver>> = HashMap::new();
-        resolvers.insert(Language::Rust, Box::new(PythonResolver::new()));
+        resolvers.insert(Language::Python, Box::new(PythonResolver::new()));
         resolvers.insert(Language::Rust, Box::new(RustResolver::new()));
-        resolvers.insert(Language::Rust, Box::new(TypeScriptResolver::new()));
+        resolvers.insert(Language::TypeScript, Box::new(TypeScriptResolver::new()));
         Self { resolvers }
     }
 
