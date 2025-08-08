@@ -68,16 +68,16 @@ pub fn parse_typescript_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
             "lexical_declaration" => {
                 let mut cursor = node.walk();
                 for child in node.children(&mut cursor) {
-                    if child.kind() == "variable_declarator" {
-                        // Check if the declarator's value is an arrow function
-                        if let Some(value_node) = child.child_by_field_name("value") {
-                            if value_node.kind() == "arrow_function" {
-                                // Get the name of the variable it's assigned to
-                                if let Some(name_node) = child.child_by_field_name("name") {
-                                    functions.push(get_text(name_node, &code));
-                                }
-                            }
-                        }
+                    if child.kind() != "variable_declarator" {
+                        continue;
+                    }
+
+                    // Check if the declarator's value is an arrow function
+                    if let Some(value_node) = child.child_by_field_name("value")
+                        && value_node.kind() == "arrow_function"
+                        && let Some(name_node) = child.child_by_field_name("name")
+                    {
+                        functions.push(get_text(name_node, &code));
                     }
                 }
             }

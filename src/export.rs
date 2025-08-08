@@ -89,18 +89,18 @@ pub fn export_graph_as_svg(graph_nodes: &[GraphNode], output_path: &Path) -> Res
         document = document.add(circle_with_title);
 
         // Node label
-        if let Some(name) = node.data().file().file_stem() {
-            if let Some(name_str) = name.to_str() {
-                let label = Text::new(name_str)
-                    .set("x", *x)
-                    .set("y", *y)
-                    .set("text-anchor", "middle")
-                    .set("dominant-baseline", "middle")
-                    .set("font-family", "Arial")
-                    .set("font-size", 12)
-                    .set("fill", "black");
-                document = document.add(label);
-            }
+        if let Some(name) = node.data().file().file_stem()
+            && let Some(name_str) = name.to_str()
+        {
+            let label = Text::new(name_str)
+                .set("x", *x)
+                .set("y", *y)
+                .set("text-anchor", "middle")
+                .set("dominant-baseline", "middle")
+                .set("font-family", "Arial")
+                .set("font-size", 12)
+                .set("fill", "black");
+            document = document.add(label);
         }
     }
 

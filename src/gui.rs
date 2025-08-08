@@ -199,57 +199,55 @@ impl SeiriGraph {
             );
 
             // Node label with background for better readability
-            if self.show_labels && self.zoom > 0.3 {
-                if let Some(name) = node.data().file().file_stem().and_then(|s| s.to_str()) {
-                    let font_size = (12.0 * self.zoom).clamp(8.0, 16.0);
+            if self.show_labels
+                && self.zoom > 0.3
+                && let Some(name) = node.data().file().file_stem().and_then(|s| s.to_str())
+            {
+                let font_size = (12.0 * self.zoom).clamp(8.0, 16.0);
 
-                    // Measure text to create appropriate background
-                    let font_id = egui::FontId::proportional(font_size);
-                    let text_galley = painter.layout_no_wrap(
-                        name.to_string(),
-                        font_id.clone(),
-                        egui::Color32::WHITE,
+                // Measure text to create appropriate background
+                let font_id = egui::FontId::proportional(font_size);
+                let text_galley =
+                    painter.layout_no_wrap(name.to_string(), font_id.clone(), egui::Color32::WHITE);
+                let text_rect = egui::Rect::from_center_size(
+                    screen_pos,
+                    text_galley.size() + egui::vec2(6.0, 4.0) * self.zoom,
+                );
+
+                // Only draw background if text is wider than the node
+                if text_galley.size().x > node_radius * 1.5 {
+                    painter.rect_filled(
+                        text_rect,
+                        4.0 * self.zoom,
+                        egui::Color32::from_black_alpha(180),
                     );
-                    let text_rect = egui::Rect::from_center_size(
-                        screen_pos,
-                        text_galley.size() + egui::vec2(6.0, 4.0) * self.zoom,
-                    );
-
-                    // Only draw background if text is wider than the node
-                    if text_galley.size().x > node_radius * 1.5 {
-                        painter.rect_filled(
-                            text_rect,
-                            4.0 * self.zoom,
-                            egui::Color32::from_black_alpha(180),
-                        );
-                        painter.rect_stroke(
-                            text_rect,
-                            4.0 * self.zoom,
-                            egui::Stroke::new(1.0 * self.zoom, egui::Color32::from_gray(100)),
-                            egui::StrokeKind::Middle,
-                        );
-                    }
-
-                    // Draw text - always white for contrast against dark backgrounds
-                    let text_color = if text_galley.size().x > node_radius * 1.5 {
-                        egui::Color32::WHITE // White text on dark background
-                    } else {
-                        // Text fits in node - use contrast-based color
-                        if (color.r() as u16) + (color.g() as u16) + (color.b() as u16) > 400 {
-                            egui::Color32::BLACK
-                        } else {
-                            egui::Color32::WHITE
-                        }
-                    };
-
-                    painter.text(
-                        screen_pos,
-                        egui::Align2::CENTER_CENTER,
-                        name,
-                        font_id,
-                        text_color,
+                    painter.rect_stroke(
+                        text_rect,
+                        4.0 * self.zoom,
+                        egui::Stroke::new(1.0 * self.zoom, egui::Color32::from_gray(100)),
+                        egui::StrokeKind::Middle,
                     );
                 }
+
+                // Draw text - always white for contrast against dark backgrounds
+                let text_color = if text_galley.size().x > node_radius * 1.5 {
+                    egui::Color32::WHITE // White text on dark background
+                } else {
+                    // Text fits in node - use contrast-based color
+                    if (color.r() as u16) + (color.g() as u16) + (color.b() as u16) > 400 {
+                        egui::Color32::BLACK
+                    } else {
+                        egui::Color32::WHITE
+                    }
+                };
+
+                painter.text(
+                    screen_pos,
+                    egui::Align2::CENTER_CENTER,
+                    name,
+                    font_id,
+                    text_color,
+                );
             }
         }
     }
@@ -257,105 +255,103 @@ impl SeiriGraph {
     fn handle_graph_interaction(&mut self, ui: &mut egui::Ui, canvas_rect: egui::Rect) {
         let canvas_center = canvas_rect.center().to_vec2();
 
-        if let Some(mouse_pos) = ui.ctx().pointer_interact_pos() {
-            if canvas_rect.contains(mouse_pos) {
-                let world_mouse = self.screen_to_world(mouse_pos.to_vec2(), canvas_center);
+        if let Some(mouse_pos) = ui.ctx().pointer_interact_pos()
+            && canvas_rect.contains(mouse_pos)
+        {
+            let world_mouse = self.screen_to_world(mouse_pos.to_vec2(), canvas_center);
 
-                // Find hovered node
-                self.hovered_node = None;
-                for (i, _) in self.graph_nodes.iter().enumerate() {
-                    let dist = (world_mouse - self.node_positions[i]).length();
-                    let node_radius = self.graph_nodes[i].calculate_size(
-                        self.min_loc,
-                        self.max_loc,
-                        self.min_node_radius,
-                        self.max_node_radius,
-                    );
-                    if dist < node_radius {
-                        self.hovered_node = Some(i);
-                        break;
-                    }
+            // Find hovered node
+            self.hovered_node = None;
+            for (i, _) in self.graph_nodes.iter().enumerate() {
+                let dist = (world_mouse - self.node_positions[i]).length();
+                let node_radius = self.graph_nodes[i].calculate_size(
+                    self.min_loc,
+                    self.max_loc,
+                    self.min_node_radius,
+                    self.max_node_radius,
+                );
+                if dist < node_radius {
+                    self.hovered_node = Some(i);
+                    break;
                 }
+            }
 
-                // Handle mouse input
-                let mouse_input = ui.input(|i| {
-                    (
-                        i.pointer.primary_clicked(),
-                        i.pointer.primary_down(),
-                        i.pointer.primary_released(),
-                    )
-                });
+            // Handle mouse input
+            let mouse_input = ui.input(|i| {
+                (
+                    i.pointer.primary_clicked(),
+                    i.pointer.primary_down(),
+                    i.pointer.primary_released(),
+                )
+            });
 
-                match mouse_input {
-                    (true, _, _) => {
-                        // Click
-                        // Always stop any current dragging first
-                        self.dragging_node = None;
-                        self.panning = false;
-                        self.drag_start_pos = Some(mouse_pos);
+            match mouse_input {
+                (true, _, _) => {
+                    // Click
+                    // Always stop any current dragging first
+                    self.dragging_node = None;
+                    self.panning = false;
+                    self.drag_start_pos = Some(mouse_pos);
 
-                        if let Some(hovered) = self.hovered_node {
-                            self.selected_node = if self.selected_node == Some(hovered) {
-                                None // Deselect if clicking same node
-                            } else {
-                                Some(hovered) // Select new node
-                            };
-                            // Only start dragging if we're clicking the same node that's already selected
-                            if self.selected_node == Some(hovered) {
-                                self.dragging_node = Some(hovered);
-                            }
+                    if let Some(hovered) = self.hovered_node {
+                        self.selected_node = if self.selected_node == Some(hovered) {
+                            None // Deselect if clicking same node
                         } else {
-                            self.selected_node = None;
-                            self.panning = true;
-                        }
-                    }
-                    (_, true, _) => {
-                        // Drag
-                        // Only process drag if mouse has moved significantly from start position
-                        let should_drag = if let (Some(start_pos), Some(_)) =
-                            (self.drag_start_pos, self.last_mouse_pos)
-                        {
-                            (mouse_pos - start_pos).length() > 5.0 // 5 pixel threshold
-                        } else {
-                            false
+                            Some(hovered) // Select new node
                         };
+                        // Only start dragging if we're clicking the same node that's already selected
+                        if self.selected_node == Some(hovered) {
+                            self.dragging_node = Some(hovered);
+                        }
+                    } else {
+                        self.selected_node = None;
+                        self.panning = true;
+                    }
+                }
+                (_, true, _) => {
+                    // Drag
+                    // Only process drag if mouse has moved significantly from start position
+                    let should_drag = if let (Some(start_pos), Some(_)) =
+                        (self.drag_start_pos, self.last_mouse_pos)
+                    {
+                        (mouse_pos - start_pos).length() > 5.0 // 5 pixel threshold
+                    } else {
+                        false
+                    };
 
-                        if should_drag {
-                            if let Some(drag_idx) = self.dragging_node {
-                                self.node_positions[drag_idx] = world_mouse;
-                            } else if self.panning {
-                                if let Some(last_pos) = self.last_mouse_pos {
-                                    let delta = (mouse_pos - last_pos) / self.zoom;
-                                    self.camera_pos -= delta;
-                                }
-                            }
+                    if should_drag {
+                        if let Some(drag_idx) = self.dragging_node {
+                            self.node_positions[drag_idx] = world_mouse;
+                        } else if self.panning
+                            && let Some(last_pos) = self.last_mouse_pos
+                        {
+                            let delta = (mouse_pos - last_pos) / self.zoom;
+                            self.camera_pos -= delta;
                         }
                     }
-                    (_, _, true) => {
-                        // Release
-                        self.dragging_node = None;
-                        self.panning = false;
-                        self.drag_start_pos = None;
-                    }
-                    _ => {}
                 }
-
-                self.last_mouse_pos = Some(mouse_pos);
-
-                // Zoom with scroll
-                let scroll = ui.input(|i| i.raw_scroll_delta.y);
-                if scroll != 0.0 {
-                    let zoom_factor = 1.0 + scroll * 0.001;
-                    let new_zoom = (self.zoom * zoom_factor).clamp(0.1, 5.0);
-
-                    // Zoom towards mouse position
-                    let mouse_world_before =
-                        self.screen_to_world(mouse_pos.to_vec2(), canvas_center);
-                    self.zoom = new_zoom;
-                    let mouse_world_after =
-                        self.screen_to_world(mouse_pos.to_vec2(), canvas_center);
-                    self.camera_pos += mouse_world_before - mouse_world_after;
+                (_, _, true) => {
+                    // Release
+                    self.dragging_node = None;
+                    self.panning = false;
+                    self.drag_start_pos = None;
                 }
+                _ => {}
+            }
+
+            self.last_mouse_pos = Some(mouse_pos);
+
+            // Zoom with scroll
+            let scroll = ui.input(|i| i.raw_scroll_delta.y);
+            if scroll != 0.0 {
+                let zoom_factor = 1.0 + scroll * 0.001;
+                let new_zoom = (self.zoom * zoom_factor).clamp(0.1, 5.0);
+
+                // Zoom towards mouse position
+                let mouse_world_before = self.screen_to_world(mouse_pos.to_vec2(), canvas_center);
+                self.zoom = new_zoom;
+                let mouse_world_after = self.screen_to_world(mouse_pos.to_vec2(), canvas_center);
+                self.camera_pos += mouse_world_before - mouse_world_after;
             }
         }
     }
