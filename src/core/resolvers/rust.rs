@@ -43,21 +43,21 @@ impl RustResolver {
         let mut parts = Vec::new();
 
         for component in path.components() {
-            if let std::path::Component::Normal(os_str) = component {
-                if let Some(part) = os_str.to_str() {
-                    if part.ends_with(".rs") {
-                        let module_name = part.strip_suffix(".rs").unwrap();
-                        if module_name == "mod" {
-                            continue;
-                        }
-                        // Skip main.rs and lib.rs as they don't add module components
-                        if module_name != "main" && module_name != "lib" {
-                            parts.push(module_name.to_string());
-                        }
-                    } else {
-                        // Directory name becomes part of module path
-                        parts.push(part.to_string());
+            if let std::path::Component::Normal(os_str) = component
+                && let Some(part) = os_str.to_str()
+            {
+                if part.ends_with(".rs") {
+                    let module_name = part.strip_suffix(".rs").unwrap();
+                    if module_name == "mod" {
+                        continue;
                     }
+                    // Skip main.rs and lib.rs as they don't add module components
+                    if module_name != "main" && module_name != "lib" {
+                        parts.push(module_name.to_string());
+                    }
+                } else {
+                    // Directory name becomes part of module path
+                    parts.push(part.to_string());
                 }
             }
         }

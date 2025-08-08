@@ -65,7 +65,7 @@ fn detect_project_languages(
             let file_language = Language::from_file(path.to_str().unwrap());
 
             if file_language.is_some() {
-                let lang = file_language.unwrap();
+                let lang = file_language?;
                 language_files.insert(path.to_path_buf(), lang);
                 detected.insert(lang);
             }

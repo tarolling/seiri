@@ -33,9 +33,9 @@ pub struct GraphBuilder {
 impl GraphBuilder {
     pub fn new() -> Self {
         let mut resolvers: HashMap<Language, Box<dyn LanguageResolver>> = HashMap::new();
-        resolvers.insert(Language::Rust, Box::new(PythonResolver::new()));
+        resolvers.insert(Language::Python, Box::new(PythonResolver::new()));
         resolvers.insert(Language::Rust, Box::new(RustResolver::new()));
-        resolvers.insert(Language::Rust, Box::new(TypeScriptResolver::new()));
+        resolvers.insert(Language::TypeScript, Box::new(TypeScriptResolver::new()));
         Self { resolvers }
     }
 
@@ -73,11 +73,12 @@ impl GraphBuilder {
                     if !import.is_local() {
                         continue; // Skip non-local imports for now
                     }
-                    if let Some(target_file) = resolver.resolve_import(import.path(), file_path) {
-                        if target_file != *file_path && !resolved_imports.contains(&target_file) {
-                            edges.push(target_file.clone());
-                            resolved_imports.insert(target_file);
-                        }
+                    if let Some(target_file) = resolver.resolve_import(import.path(), file_path)
+                        && target_file != *file_path
+                        && !resolved_imports.contains(&target_file)
+                    {
+                        edges.push(target_file.clone());
+                        resolved_imports.insert(target_file);
                     }
                 }
 
