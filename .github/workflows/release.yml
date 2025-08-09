@@ -9,62 +9,36 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build-release:
+  build:
     runs-on: ${{ matrix.os }}
-    permissions:
-      contents: write
     strategy:
       matrix:
         include:
           - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            archive_ext: tar.gz
-            asset_name: seiri-linux-amd64
+            target: x86_64-unknown-linux-musl
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-musl
           - os: macos-latest
             target: x86_64-apple-darwin
-            archive_ext: tar.gz
-            asset_name: seiri-macos-amd64
+          - os: macos-latest
+            target: aarch64-apple-darwin
           - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            archive_ext: zip
-            asset_name: seiri-windows-amd64
-
+            target: x86_64-pc-windows-gnu
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Install Rust toolchain
-      uses: actions-rust-lang/setup-rust-toolchain@fb51252c7ba57d633bc668f941da052e410add48 # v1.13.0
-      with:
-        toolchain: stable
-        target: ${{ matrix.target }}
-        override: true
+      - name: Install target
+        run: rustup target add ${{ matrix.target }}
 
-    - name: Install Linux dependencies
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y pkg-config libx11-dev libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev libgl1-mesa-dev
+      - name: Install musl-tools (Linux only)
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
 
-    - name: Build
-      run: cargo build --release --target ${{ matrix.target }}
-
-    - name: Package Binary (Unix)
-      if: matrix.os != 'windows-latest'
-      run: |
-        cd target/${{ matrix.target }}/release
-        tar czvf ../../../${{ matrix.asset_name }}.${{ matrix.archive_ext }} seiri
-        cd -
-
-    - name: Package Binary (Windows)
-      if: matrix.os == 'windows-latest'
-      run: |
-        cd target/${{ matrix.target }}/release
-        7z a ../../../${{ matrix.asset_name }}.${{ matrix.archive_ext }} seiri.exe
-        cd -
-
-    - name: Release
-      uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
-      with:
-        files: ${{ matrix.asset_name }}.${{ matrix.archive_ext }}
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and upload
+        uses: rust-build/rust-build.action@6febf1b0ed6499a46610b58ef9d810398e75f3c2 # v1.4.5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          RUSTTARGET: ${{ matrix.target }}
+          ARCHIVE_TYPES: tar.gz zip
+          UPLOAD_MODE: release
