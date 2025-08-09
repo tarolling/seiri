@@ -19,10 +19,6 @@ pub struct SeiriGraph {
     last_mouse_pos: Option<egui::Pos2>,
     drag_start_pos: Option<egui::Pos2>,
 
-    // Layout animation
-    layout_iterations: usize,
-    auto_layout: bool,
-
     // Visual settings
     min_node_radius: f32,
     max_node_radius: f32,
@@ -61,8 +57,6 @@ impl SeiriGraph {
             panning: false,
             last_mouse_pos: None,
             drag_start_pos: None,
-            layout_iterations: 0,
-            auto_layout: true,
             min_node_radius: 20.0,
             max_node_radius: 40.0,
             show_labels: true,
@@ -365,10 +359,8 @@ impl eframe::App for SeiriGraph {
                 ui.heading("Project Structure Graph");
                 ui.separator();
 
-                ui.checkbox(&mut self.auto_layout, "Auto Layout");
                 if ui.button("Reset Layout").clicked() {
                     self.initialize_positions();
-                    self.layout_iterations = 0;
                 }
 
                 ui.separator();
@@ -540,9 +532,7 @@ impl eframe::App for SeiriGraph {
             }
         });
 
-        if self.auto_layout && self.layout_iterations < 500 {
-            ctx.request_repaint();
-        }
+        ctx.request_repaint();
     }
 }
 
