@@ -234,7 +234,6 @@ fn walk_directory(path: &Path, no_gitignore: bool) -> Vec<PathBuf> {
     for result in builder.build() {
         match result {
             Ok(entry) => {
-                println!("found entry: {entry:?}");
                 if let Some(file_type) = entry.file_type()
                     && file_type.is_file()
                 {
@@ -383,7 +382,6 @@ mod tests {
         fs::write(dir.path().join(".gitignore"), "ignored.txt\n").unwrap();
 
         let files = walk_directory(dir.path(), false);
-        println!("FILES: {:?}", files);
         assert!(!files.iter().any(|p| p.ends_with("ignored.txt")));
     }
 
