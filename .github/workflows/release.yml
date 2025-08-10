@@ -30,6 +30,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          RUSTTARGET: ${{ matrix.target }}
           ARCHIVE_TYPES: ${{ matrix.archive }}
+          RUSTTARGET: ${{ matrix.target }}
+          TOOLCHAIN_VERSION: stable
           UPLOAD_MODE: release
