@@ -388,8 +388,6 @@ use crate::{
         let result = parse_rust_file(&file_path).unwrap();
         let imports: Vec<_> = result.imports().iter().collect();
 
-        println!("IMPORTS: {:?}", imports);
-
         // Test std imports
         assert!(
             imports

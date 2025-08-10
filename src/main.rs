@@ -8,12 +8,12 @@ mod parsers;
 use clap::Parser;
 use core::defs::{FileNode, Language};
 use core::resolvers::GraphBuilder;
+use ignore::WalkBuilder;
 use parsers::{
     python::parse_python_file, rust::parse_rust_file, typescript::parse_typescript_file,
 };
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
-use walkdir::WalkDir;
+use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
 struct Cli {
@@ -24,92 +24,93 @@ struct Cli {
     /// Enable verbose output
     #[arg(short, long)]
     verbose: bool,
+    /// Ignore .gitignore files
+    #[arg(long)]
+    no_gitignore: bool,
+}
+
+impl Cli {
+    fn validate(&self) -> Result<(), String> {
+        // Validate project path exists
+        if !self.project_path.exists() {
+            return Err(format!(
+                "The specified project path does not exist: {:?}",
+                self.project_path
+            ));
+        }
+
+        // Validate project path is a dir or file
+        if !self.project_path.is_dir() && !self.project_path.is_file() {
+            return Err(format!(
+                "The specified project path is not a file or directory: {:?}",
+                self.project_path
+            ));
+        }
+
+        // Validate output filename if provided
+        if let Some(name) = &self.output_filename {
+            if name.trim().is_empty() {
+                return Err("Output filename cannot be empty".into());
+            }
+            if name.contains(std::path::MAIN_SEPARATOR) {
+                return Err("Output filename cannot contain path separators".into());
+            }
+        }
+
+        Ok(())
+    }
+}
+
+fn main() {
+    let args = Cli::parse();
+
+    if let Err(msg) = args.validate() {
+        eprintln!("Error: {msg}");
+        std::process::exit(1);
+    }
+
+    let verbose = args.verbose;
+
+    match run(args) {
+        Ok(_) => {
+            if verbose {
+                println!("Operation completed successfully.");
+            }
+        }
+        Err(msg) => {
+            eprintln!("Error: {msg}");
+            std::process::exit(1);
+        }
+    }
 }
 
 fn detect_file_language(
     target_file: PathBuf,
     language_files: &mut HashMap<PathBuf, Language>,
-) -> Option<HashSet<Language>> {
-    let file_language = Language::from_file(target_file.to_str().unwrap())?;
-
-    let mut detected = HashSet::new();
-    language_files.insert(target_file.clone(), file_language);
-    detected.insert(file_language);
-    Some(detected)
-}
-
-fn detect_project_languages(
-    target_dir: PathBuf,
-    language_files: &mut HashMap<PathBuf, Language>,
-) -> Option<HashSet<Language>> {
-    // TODO: Read .gitignore if it exists
-    // let mut exclude_patterns = Vec::new();
-    // let gitignore_path = target_dir.join(".gitignore");
-    // if gitignore_path.exists() {
-    //     if let Ok(content) = fs::read_to_string(gitignore_path) {
-    //         exclude_patterns = content
-    //             .lines()
-    //             .filter(|line| !line.trim().is_empty() && !line.starts_with('#'))
-    //             .map(|line| line.trim().to_string())
-    //             .collect();
-    //     }
-    // }
-
-    let mut detected: HashSet<Language> = HashSet::new();
-
-    for entry in WalkDir::new(target_dir) {
-        let entry = entry.unwrap();
-        let path = entry.path();
-
-        if path.is_file() {
-            let file_language = Language::from_file(path.to_str().unwrap());
-
-            if file_language.is_some() {
-                let lang = file_language?;
-                language_files.insert(path.to_path_buf(), lang);
-                detected.insert(lang);
-            }
-        }
-    }
-
-    if detected.is_empty() {
-        None
-    } else {
-        Some(detected)
+    detected_langs: &mut HashSet<Language>,
+) {
+    if let Some(file_language) = Language::from_file(target_file.to_str().unwrap()) {
+        language_files.insert(target_file.clone(), file_language);
+        detected_langs.insert(file_language);
     }
 }
 
-fn run(path: PathBuf, output: Option<String>, verbose: bool) -> Result<(), String> {
-    if !path.exists() {
-        return Err(format!("The path you specified does not exist: {path:?}"));
-    }
+fn run(args: Cli) -> Result<(), String> {
+    let Cli {
+        project_path,
+        output_filename: output,
+        verbose,
+        no_gitignore,
+    } = args;
+
     if verbose {
-        if output.is_none() {
-            println!("Processing path: {path:?} (no output)");
-        } else {
-            println!(
-                "Processing path: {:?}, output: {}",
-                path,
-                output.as_ref().unwrap()
-            );
-        }
+        println!("Processing path: {project_path:?}");
     }
-
-    let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
-
-    // Determine project root
-    let project_root = if path.is_file() {
-        path.parent().unwrap_or(&path).to_path_buf()
-    } else {
-        path.clone()
-    };
 
     // Detect languages in file/project
-    if path.is_file() {
-        detect_file_language(path.clone(), &mut language_files);
-    } else {
-        detect_project_languages(path.clone(), &mut language_files);
-    }
+    let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
+    let files_to_process = walk_directory(project_path.as_ref(), no_gitignore);
+    detect_project_languages(&files_to_process, &mut language_files);
 
     // Parse files and collect Nodes, indexed by file path
     let mut node_map: HashMap<PathBuf, FileNode> = HashMap::new();
@@ -144,7 +145,7 @@ fn run(path: PathBuf, output: Option<String>, verbose: bool) -> Result<(), Strin
 
     // Build GraphNodes with multi-language support
     let mut graph_builder = GraphBuilder::new();
-    let graph_nodes = graph_builder.build_graph_edges(&node_map, &project_root);
+    let graph_nodes = graph_builder.build_graph_edges(&node_map, &project_path);
 
     if verbose {
         println!("\nResolved {} nodes with connections:", graph_nodes.len());
@@ -169,25 +170,25 @@ fn run(path: PathBuf, output: Option<String>, verbose: bool) -> Result<(), Strin
         }
     }
 
-    // Launch the visualization or export if requested
-    if let Some(ref out) = output {
-        match out.as_str() {
+    // launch the visualization or export if specified
+    if let Some(filename) = output {
+        match filename.as_str() {
             "gui" => {
                 run_gui(graph_nodes);
                 return Ok(());
             }
-            output_file if output_file.ends_with(".svg") => {
+            filename if filename.ends_with(".svg") => {
                 if verbose {
-                    println!("Exporting graph to SVG: {output_file}");
+                    println!("Exporting graph to SVG: {filename}");
                 }
-                export::export_graph_as_svg(&graph_nodes, &PathBuf::from(output_file))
+                export::export_graph_as_svg(&graph_nodes, &PathBuf::from(filename))
                     .map_err(|e| format!("Failed to export SVG: {e}"))?;
                 if verbose {
-                    println!("Successfully exported to {output_file}");
+                    println!("Successfully exported to {filename}");
                 }
             }
             _ => {
-                return Err(format!("Unsupported output format: {out}"));
+                return Err(format!("Unsupported output format: {filename}"));
             }
         }
     }
@@ -195,26 +196,61 @@ fn run(path: PathBuf, output: Option<String>, verbose: bool) -> Result<(), Strin
     Ok(())
 }
 
-fn main() {
-    let args = Cli::parse();
-    match run(args.project_path, args.output_filename, args.verbose) {
-        Ok(_) => {
-            if args.verbose {
-                println!("Operation completed successfully!");
-            } else {
-                println!("Success!");
-            }
-        }
-        Err(e) => {
-            eprintln!("seiri error: {e}");
-            std::process::exit(1);
+fn detect_project_languages(
+    files_to_process: &[PathBuf],
+    language_files: &mut HashMap<PathBuf, Language>,
+) -> Option<HashSet<Language>> {
+    let mut detected: HashSet<Language> = HashSet::new();
+    files_to_process
+        .iter()
+        .for_each(|entry| detect_file_language(entry.to_path_buf(), language_files, &mut detected));
+
+    if detected.is_empty() {
+        None
+    } else {
+        Some(detected)
+    }
+}
+
+fn walk_directory(path: &Path, no_gitignore: bool) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+
+    let mut builder = WalkBuilder::new(path);
+    if no_gitignore {
+        builder
+            .git_ignore(false)
+            .git_exclude(false)
+            .git_global(false)
+            .ignore(false);
+    } else {
+        // for most/all projects, gitignore and other ignore files will be automatically detected by ignore crate
+        // but they don't when using tempfile and/or when running tests
+        let gitignore_path = path.join(".gitignore");
+        if gitignore_path.exists() {
+            builder.add_ignore(gitignore_path);
         }
     }
+
+    for result in builder.build() {
+        match result {
+            Ok(entry) => {
+                if let Some(file_type) = entry.file_type()
+                    && file_type.is_file()
+                {
+                    paths.push(entry.path().to_path_buf());
+                }
+            }
+            Err(msg) => eprintln!("Error reading entry: {msg}"),
+        }
+    }
+
+    paths
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use std::{fs::File, path::Path};
     use tempfile::TempDir;
 
@@ -223,7 +259,14 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let non_existent = temp_dir.path().join("non_existent_dir_12345");
 
-        let result = run(non_existent.clone(), Some("output.txt".to_string()), false);
+        let args = Cli {
+            project_path: non_existent.clone(),
+            output_filename: Some("output.txt".to_string()),
+            verbose: false,
+            no_gitignore: false,
+        };
+
+        let result = args.validate();
 
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("does not exist"));
@@ -235,7 +278,14 @@ mod tests {
         let temp_file = temp_dir.path().join("test_file.txt");
         File::create(&temp_file).unwrap();
 
-        let result = run(temp_file, None, false);
+        let args = Cli {
+            project_path: temp_file,
+            output_filename: None,
+            verbose: false,
+            no_gitignore: false,
+        };
+
+        let result = run(args);
 
         assert!(result.is_ok());
     }
@@ -244,7 +294,14 @@ mod tests {
     fn test_existing_directory() {
         let temp_dir = TempDir::new().unwrap();
 
-        let result = run(temp_dir.path().to_path_buf(), None, false);
+        let args = Cli {
+            project_path: temp_dir.path().to_path_buf(),
+            output_filename: None,
+            verbose: false,
+            no_gitignore: false,
+        };
+
+        let result = run(args);
 
         assert!(result.is_ok());
     }
@@ -255,7 +312,14 @@ mod tests {
         let temp_file = temp_dir.path().join("test.rs");
         File::create(&temp_file).unwrap();
 
-        let result = run(temp_file, None, true);
+        let args = Cli {
+            project_path: temp_file,
+            output_filename: None,
+            verbose: true,
+            no_gitignore: false,
+        };
+
+        let result = run(args);
 
         assert!(result.is_ok());
     }
@@ -266,10 +330,15 @@ mod tests {
         assert!(!current_file.try_exists().is_err());
 
         let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
-        let result = detect_file_language(current_file.to_path_buf(), &mut language_files);
+        let mut detected_languages = HashSet::new();
+        detect_file_language(
+            current_file.to_path_buf(),
+            &mut language_files,
+            &mut detected_languages,
+        );
 
-        assert!(result.is_some());
-        assert!(result.unwrap().contains(&Language::Rust));
+        assert!(!detected_languages.is_empty());
+        assert!(detected_languages.contains(&Language::Rust));
     }
 
     #[test]
@@ -278,9 +347,14 @@ mod tests {
         assert!(!current_file.try_exists().is_err());
 
         let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
-        let result = detect_file_language(current_file.to_path_buf(), &mut language_files);
+        let mut detected_languages = HashSet::new();
+        detect_file_language(
+            current_file.to_path_buf(),
+            &mut language_files,
+            &mut detected_languages,
+        );
 
-        assert!(result.is_none());
+        assert!(detected_languages.is_empty());
     }
 
     #[test]
@@ -289,12 +363,37 @@ mod tests {
         assert!(!current_dir.try_exists().is_err());
 
         let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
-        let result = detect_project_languages(current_dir.to_path_buf(), &mut language_files);
+        let files_to_process = walk_directory(&current_dir, false);
+        let result = detect_project_languages(&files_to_process, &mut language_files);
 
         assert!(&result.is_some());
 
         let langs = result.unwrap();
-        assert!(langs.len() == 1);
+        assert_eq!(langs.len(), 1);
         assert!(langs.contains(&Language::Rust));
+    }
+
+    #[test]
+    fn respects_gitignore() {
+        let dir = tempfile::tempdir().unwrap();
+        let ignored_file = dir.path().join("ignored.txt");
+        File::create(&ignored_file).unwrap();
+
+        fs::write(dir.path().join(".gitignore"), "ignored.txt\n").unwrap();
+
+        let files = walk_directory(dir.path(), false);
+        assert!(!files.iter().any(|p| p.ends_with("ignored.txt")));
+    }
+
+    #[test]
+    fn ignores_no_gitignore_flag() {
+        let dir = tempfile::tempdir().unwrap();
+        let ignored_file = dir.path().join("ignored.txt");
+        File::create(&ignored_file).unwrap();
+
+        fs::write(dir.path().join(".gitignore"), "ignored.txt\n").unwrap();
+
+        let files = walk_directory(dir.path(), true);
+        assert!(files.iter().any(|p| p.ends_with("ignored.txt")));
     }
 }

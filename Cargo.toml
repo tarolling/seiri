@@ -14,6 +14,7 @@ tree-sitter-python = "0.23.6"
 svg = "0.18.0"
 walkdir = "2.5.0"
 tree-sitter-typescript = "0.23.2"
+ignore = "0.4.23"
 
 [dev-dependencies]
 tempfile = "3.0"

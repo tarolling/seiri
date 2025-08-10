@@ -1,4 +1,4 @@
-# <center>seiri (整理)</center>
+# seiri (整理)
 
 [![dependency status](https://deps.rs/repo/github/tarolling/seiri/status.svg)](https://deps.rs/repo/github/tarolling/seiri)
 [![CI](https://github.com/tarolling/seiri/actions/workflows/ci.yml/badge.svg)](https://github.com/tarolling/seiri/actions/workflows/ci.yml)
@@ -36,9 +36,10 @@ seiri <path> [gui|<export_path>] [-v|--verbose]
 ```
 
 * `<path>` - File or directory to analyze
-* `gui` - (optional) Launch visualization
-* `<export_path>` - (optional) Export graph to specified path; currently support `SVG` file exports
+* `gui` - Launch visualization
+* `<export_path>` - Export graph to specified path; currently support `SVG` file exports
 * `-v`/`--verbose` - Show detailed logging about file detection and parsing
+* `--no-gitignore` - Do not respect `.gitignore` file if present
 
 ## Supported Languages
 
