@@ -32,7 +32,7 @@ To create a new release:
 
 1. Bump the version in [Cargo.toml](/Cargo.toml).
 2. Rebuild to ensure nothing changes.
-3. Commit and push changes.
+3. Commit with message "Bump version to 1.0.0" and push changes.
 4. Tag the commit:
 
    ```sh
