@@ -9,28 +9,62 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-    name: release ${{ matrix.target }}
-    runs-on: ubuntu-latest
+  build-release:
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: write
     strategy:
       matrix:
         include:
-          - target: x86_64-pc-windows-gnu
-            archive: zip
-          - target: x86_64-unknown-linux-musl
-            archive: tar.gz tar.xz tar.zst
-          - target: x86_64-apple-darwin
-            archive: zip
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            archive_ext: tar.gz
+            asset_name: seiri-linux-amd64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            archive_ext: tar.gz
+            asset_name: seiri-macos-amd64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive_ext: zip
+            asset_name: seiri-windows-amd64
+
     steps:
-      - uses: actions/checkout@v4
-      - name: Build and release
-        uses: rust-build/rust-build.action@6febf1b0ed6499a46610b58ef9d810398e75f3c2 # v1.4.5
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          ARCHIVE_TYPES: ${{ matrix.archive }}
-          RUSTTARGET: ${{ matrix.target }}
-          TOOLCHAIN_VERSION: stable
-          UPLOAD_MODE: release
+    - uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: actions-rust-lang/setup-rust-toolchain@fb51252c7ba57d633bc668f941da052e410add48 # v1.13.0
+      with:
+        toolchain: stable
+        target: ${{ matrix.target }}
+        override: true
+
+    - name: Install Linux dependencies
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pkg-config libx11-dev libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev libgl1-mesa-dev
+
+    - name: Build
+      run: cargo build --release --target ${{ matrix.target }}
+
+    - name: Package Binary (Unix)
+      if: matrix.os != 'windows-latest'
+      run: |
+        cd target/${{ matrix.target }}/release
+        tar czvf ../../../${{ matrix.asset_name }}.${{ matrix.archive_ext }} seiri
+        cd -
+
+    - name: Package Binary (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        cd target/${{ matrix.target }}/release
+        7z a ../../../${{ matrix.asset_name }}.${{ matrix.archive_ext }} seiri.exe
+        cd -
+
+    - name: Release
+      uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
+      with:
+        files: ${{ matrix.asset_name }}.${{ matrix.archive_ext }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
