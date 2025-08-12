@@ -189,10 +189,10 @@ fn run(args: Cli) -> Result<(), String> {
             }
             filename if filename.ends_with(".png") => {
                 if verbose {
-                    println!("Exporting graph to SVG: {filename}");
+                    println!("Exporting graph to PNG: {filename}");
                 }
                 export::export_graph_as_png(&graph_nodes, &PathBuf::from(filename))
-                    .map_err(|e| format!("Failed to export SVG: {e}"))?;
+                    .map_err(|e| format!("Failed to export PNG: {e}"))?;
                 if verbose {
                     println!("Successfully exported to {filename}");
                 }
