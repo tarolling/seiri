@@ -337,7 +337,7 @@ mod tests {
     #[test]
     fn test_detect_file() {
         let current_file = Path::new(file!());
-        assert!(!current_file.try_exists().is_err());
+        assert!(current_file.try_exists().is_ok());
 
         let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
         let mut detected_languages = HashSet::new();
@@ -354,7 +354,7 @@ mod tests {
     #[test]
     fn test_detect_invalid_file() {
         let current_file = Path::new("Cargo.lock");
-        assert!(!current_file.try_exists().is_err());
+        assert!(current_file.try_exists().is_ok());
 
         let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
         let mut detected_languages = HashSet::new();
@@ -370,7 +370,7 @@ mod tests {
     #[test]
     fn test_detect_dir() {
         let current_dir = Path::new(file!()).parent().unwrap().canonicalize().unwrap();
-        assert!(!current_dir.try_exists().is_err());
+        assert!(current_dir.try_exists().is_ok());
 
         let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
         let files_to_process = walk_directory(&current_dir, false);
