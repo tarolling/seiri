@@ -33,9 +33,9 @@ pub fn parse_typescript_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
     let tree = parser.parse(&code, None)?;
     let root_node = tree.root_node();
 
-    let mut imports = Vec::new();
-    let mut functions = Vec::new();
-    let mut containers = Vec::new();
+    let mut imports = HashSet::new();
+    let mut functions = HashSet::new();
+    let mut containers = HashSet::new();
     let external_references = HashSet::new();
 
     let mut stack = vec![root_node];
@@ -46,21 +46,21 @@ pub fn parse_typescript_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
             "import_statement" | "export_statement" => {
                 if let Some(import_path) = extract_import_path(node, &code) {
                     let is_local = is_local_import(&import_path);
-                    imports.push(Import::new(import_path, is_local));
+                    imports.insert(Import::new(import_path, is_local));
                 }
             }
 
             // `function hello() {}`
             "function_declaration" => {
                 if let Some(name_node) = node.child_by_field_name("name") {
-                    functions.push(get_text(name_node, &code));
+                    functions.insert(get_text(name_node, &code));
                 }
             }
 
             // `class MyClass { method() {} }`
             "method_definition" => {
                 if let Some(name_node) = node.child_by_field_name("name") {
-                    functions.push(get_text(name_node, &code));
+                    functions.insert(get_text(name_node, &code));
                 }
             }
 
@@ -77,7 +77,7 @@ pub fn parse_typescript_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
                         && value_node.kind() == "arrow_function"
                         && let Some(name_node) = child.child_by_field_name("name")
                     {
-                        functions.push(get_text(name_node, &code));
+                        functions.insert(get_text(name_node, &code));
                     }
                 }
             }
@@ -88,7 +88,7 @@ pub fn parse_typescript_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
             | "enum_declaration"
             | "type_alias_declaration" => {
                 if let Some(name_node) = node.child_by_field_name("name") {
-                    containers.push(get_text(name_node, &code));
+                    containers.insert(get_text(name_node, &code));
                 }
             }
 

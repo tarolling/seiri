@@ -143,9 +143,9 @@ pub fn parse_python_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
     let tree = parser.parse(&code, None)?;
     let root_node = tree.root_node();
 
-    let mut imports = Vec::new();
-    let mut functions = Vec::new();
-    let mut containers = Vec::new();
+    let mut imports = HashSet::new();
+    let mut functions = HashSet::new();
+    let mut containers = HashSet::new();
     let mut external_references = HashSet::new();
 
     // Traverse the syntax tree
@@ -160,12 +160,12 @@ pub fn parse_python_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
                 for import_path in import_paths {
                     let is_local = is_local_import(&import_path, path.as_ref());
                     if is_local {
-                        imports.push(Import::new(
+                        imports.insert(Import::new(
                             import_path.trim_start_matches(".").to_string(),
                             is_local,
                         ));
                     } else {
-                        imports.push(Import::new(import_path, is_local));
+                        imports.insert(Import::new(import_path, is_local));
                     }
                 }
             }
@@ -183,7 +183,7 @@ pub fn parse_python_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
                             .parent()
                             .is_some_and(|p| p.kind() == "function_definition");
                     if (!name.starts_with('_') || name.starts_with("__")) && !in_function {
-                        functions.push(name);
+                        functions.insert(name);
                     }
                 }
             }
@@ -192,7 +192,7 @@ pub fn parse_python_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
                     .children(&mut cursor)
                     .find(|n| n.kind() == "identifier")
                 {
-                    containers.push(get_text(name_node, &code));
+                    containers.insert(get_text(name_node, &code));
                 }
             }
             "attribute" | "call" => {

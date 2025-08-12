@@ -118,9 +118,9 @@ fn parser_loop<P: AsRef<Path>>(
 ) -> Option<FileNode> {
     let loc = code.matches("\n").count() as u32 + 1; // count number of newlines bc code.lines() has failed me
 
-    let mut imports = Vec::new();
-    let mut functions = Vec::new();
-    let mut containers = Vec::new();
+    let mut imports = HashSet::new();
+    let mut functions = HashSet::new();
+    let mut containers = HashSet::new();
     let mut external_references = HashSet::new();
 
     let mut cursor = root_node.walk();
@@ -133,7 +133,7 @@ fn parser_loop<P: AsRef<Path>>(
                 for import_path in import_paths {
                     if !import_path.is_empty() {
                         let is_local = is_local_import(&import_path, path.as_ref());
-                        imports.push(Import::new(import_path, is_local));
+                        imports.insert(Import::new(import_path, is_local));
                     }
                 }
             }
@@ -153,7 +153,7 @@ fn parser_loop<P: AsRef<Path>>(
 
                 // Only add as import if it's a declaration (has semicolon)
                 if !mod_name.is_empty() && is_declaration {
-                    imports.push(Import::new(mod_name, true));
+                    imports.insert(Import::new(mod_name, true));
                 }
             }
             "function_item" | "function_signature_item" => {
@@ -162,7 +162,7 @@ fn parser_loop<P: AsRef<Path>>(
                 for child in node.children(&mut cursor) {
                     if child.kind() == "identifier" {
                         let name = get_text(child, code);
-                        functions.push(name);
+                        functions.insert(name);
                     }
                 }
             }
@@ -171,7 +171,7 @@ fn parser_loop<P: AsRef<Path>>(
                 for child in node.children(&mut cursor) {
                     if child.kind() == "type_identifier" {
                         let name = get_text(child, code);
-                        containers.push(name);
+                        containers.insert(name);
                     }
                 }
             }
