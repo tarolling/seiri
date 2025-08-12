@@ -54,7 +54,7 @@ impl Language {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Import {
     path: String,
     is_local: bool,
@@ -83,11 +83,11 @@ pub struct FileNode {
     loc: u32,
     language: Language,
     /// List of imports with local/external classification
-    imports: Vec<Import>,
+    imports: HashSet<Import>,
     /// List of function names defined in this file
-    functions: Vec<String>,
+    functions: HashSet<String>,
     /// List of container names (classes, structs, etc.) defined in this file
-    containers: Vec<String>,
+    containers: HashSet<String>,
     /// List of references to external functions/containers (as strings)
     external_references: HashSet<String>,
 }
@@ -97,9 +97,9 @@ impl FileNode {
         file: PathBuf,
         loc: u32,
         language: Language,
-        imports: Vec<Import>,
-        functions: Vec<String>,
-        containers: Vec<String>,
+        imports: HashSet<Import>,
+        functions: HashSet<String>,
+        containers: HashSet<String>,
         external_references: HashSet<String>,
     ) -> Self {
         FileNode {
@@ -125,15 +125,15 @@ impl FileNode {
         &self.language
     }
 
-    pub fn imports(&self) -> &Vec<Import> {
+    pub fn imports(&self) -> &HashSet<Import> {
         &self.imports
     }
 
-    pub fn functions(&self) -> &Vec<String> {
+    pub fn functions(&self) -> &HashSet<String> {
         &self.functions
     }
 
-    pub fn containers(&self) -> &Vec<String> {
+    pub fn containers(&self) -> &HashSet<String> {
         &self.containers
     }
 
