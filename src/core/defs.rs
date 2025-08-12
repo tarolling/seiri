@@ -1,6 +1,7 @@
 use once_cell::sync::Lazy;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use tiny_skia::Color;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Language {
@@ -50,6 +51,19 @@ impl Language {
             Language::Python => "#FFD43B",
             Language::Rust => "#DEA584",
             Language::TypeScript => "#007ACC",
+        }
+    }
+
+    /// Returns the color associated with this language (in RGBA format)
+    pub fn color_rgba(&self) -> Color {
+        match self {
+            Language::Python => Color::from_rgba(1.0, 212.0 / 255.0, 59.0 / 255.0, 1.0).unwrap(),
+            Language::Rust => {
+                Color::from_rgba(222.0 / 255.0, 165.0 / 255.0, 132.0 / 255.0, 1.0).unwrap()
+            }
+            Language::TypeScript => {
+                Color::from_rgba(0.0, 122.0 / 255.0, 204.0 / 255.0, 1.0).unwrap()
+            }
         }
     }
 }
