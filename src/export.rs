@@ -1,4 +1,6 @@
 use crate::core::defs::{GraphNode, Language};
+use font_kit::family_name::FamilyName;
+use font_kit::source::SystemSource;
 use fontdue::{Font, FontSettings};
 use std::collections::HashMap;
 use std::fs::File;
@@ -6,15 +8,13 @@ use std::io::Write;
 use std::path::Path;
 use svg::Document;
 use svg::node::element::{Circle, Line, Text, Title};
-use tiny_skia::*;
+use tiny_skia::{Color, FillRule, Paint, PathBuilder, Pixmap, Rect, Shader, Stroke, Transform};
 
 const CANVAS_WIDTH: f32 = 1200.0;
 const CANVAS_HEIGHT: f32 = 900.0;
 const MIN_NODE_RADIUS: f32 = 20.0;
 const MAX_NODE_RADIUS: f32 = 40.0;
 const MARGIN: f32 = 50.0;
-
-static FONT: &[u8] = include_bytes!("../font/arial.ttf");
 
 pub fn export_graph_as_svg(graph_nodes: &[GraphNode], output_path: &Path) -> Result<(), String> {
     if graph_nodes.is_empty() {
@@ -152,6 +152,8 @@ pub fn export_graph_as_png(graph_nodes: &[GraphNode], output_path: &Path) -> Res
         return Ok(());
     }
 
+    let font = load_font()?;
+
     // Layout math (unchanged from SVG version)
     let radius = (CANVAS_HEIGHT - 2.0 * MARGIN).min(CANVAS_WIDTH - 2.0 * MARGIN) * 0.4;
     let center_x = CANVAS_WIDTH / 2.0;
@@ -241,7 +243,7 @@ pub fn export_graph_as_png(graph_nodes: &[GraphNode], output_path: &Path) -> Res
 
         // Node label
         if let Some(name) = node.data().file().file_stem().and_then(|s| s.to_str()) {
-            draw_text(&mut pixmap, name, x, y, 12.0, false);
+            draw_text(&font, &mut pixmap, name, x, y, 12.0, false);
         }
     }
 
@@ -283,6 +285,7 @@ pub fn export_graph_as_png(graph_nodes: &[GraphNode], output_path: &Path) -> Res
 
         // Legend label
         draw_text(
+            &font,
             &mut pixmap,
             lang.to_string(),
             legend_x + 15.0,
@@ -297,9 +300,15 @@ pub fn export_graph_as_png(graph_nodes: &[GraphNode], output_path: &Path) -> Res
     Ok(())
 }
 
-fn draw_text(pixmap: &mut Pixmap, text: &str, x: f32, y: f32, size: f32, legends: bool) {
-    let font = Font::from_bytes(FONT, FontSettings::default()).unwrap();
-
+fn draw_text(
+    font: &Font,
+    pixmap: &mut Pixmap,
+    text: &str,
+    x: f32,
+    y: f32,
+    size: f32,
+    legends: bool,
+) {
     let total_width: f32 = text
         .chars()
         .map(|ch| font.metrics(ch, size).advance_width)
@@ -347,4 +356,34 @@ fn draw_text(pixmap: &mut Pixmap, text: &str, x: f32, y: f32, size: f32, legends
 
         cursor_x += metrics.advance_width;
     }
+}
+
+/// Attempt to load Arial font, falling back to system font
+fn load_font() -> Result<Font, String> {
+    let source = SystemSource::new();
+
+    let font_data = match source.select_by_postscript_name("Arial") {
+        Ok(handle) => handle
+            .load()
+            .map_err(|e| format!("Failed to load font: {}", e))?
+            .copy_font_data()
+            .unwrap()
+            .to_vec(),
+        Err(_) => {
+            let handle = source
+                .select_best_match(
+                    &[FamilyName::SansSerif],
+                    &font_kit::properties::Properties::new(),
+                )
+                .map_err(|e| format!("Failed to load font: {}", e))?;
+            handle
+                .load()
+                .map_err(|e| format!("Failed to load font: {}", e))?
+                .copy_font_data()
+                .unwrap()
+                .to_vec()
+        }
+    };
+
+    Ok(Font::from_bytes(font_data, FontSettings::default())?)
 }
