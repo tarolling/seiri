@@ -37,7 +37,7 @@ seiri <path> [gui|<export_path>] [-v|--verbose]
 
 * `<path>` - File or directory to analyze
 * `gui` - Launch visualization
-* `<export_path>` - Export graph to specified path; currently support `SVG` file exports
+* `<export_path>` - Export graph to specified path; currently support `SVG` and `PNG` file exports
 * `-v`/`--verbose` - Show detailed logging about file detection and parsing
 * `--no-gitignore` - Do not respect `.gitignore` file if present
 
