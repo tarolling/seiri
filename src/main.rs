@@ -187,6 +187,16 @@ fn run(args: Cli) -> Result<(), String> {
                     println!("Successfully exported to {filename}");
                 }
             }
+            filename if filename.ends_with(".png") => {
+                if verbose {
+                    println!("Exporting graph to PNG: {filename}");
+                }
+                export::export_graph_as_png(&graph_nodes, &PathBuf::from(filename))
+                    .map_err(|e| format!("Failed to export PNG: {e}"))?;
+                if verbose {
+                    println!("Successfully exported to {filename}");
+                }
+            }
             _ => {
                 return Err(format!("Unsupported output format: {filename}"));
             }
@@ -327,7 +337,7 @@ mod tests {
     #[test]
     fn test_detect_file() {
         let current_file = Path::new(file!());
-        assert!(!current_file.try_exists().is_err());
+        assert!(current_file.try_exists().is_ok());
 
         let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
         let mut detected_languages = HashSet::new();
@@ -344,7 +354,7 @@ mod tests {
     #[test]
     fn test_detect_invalid_file() {
         let current_file = Path::new("Cargo.lock");
-        assert!(!current_file.try_exists().is_err());
+        assert!(current_file.try_exists().is_ok());
 
         let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
         let mut detected_languages = HashSet::new();
@@ -360,7 +370,7 @@ mod tests {
     #[test]
     fn test_detect_dir() {
         let current_dir = Path::new(file!()).parent().unwrap().canonicalize().unwrap();
-        assert!(!current_dir.try_exists().is_err());
+        assert!(current_dir.try_exists().is_ok());
 
         let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
         let files_to_process = walk_directory(&current_dir, false);
