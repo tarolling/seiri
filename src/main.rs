@@ -20,6 +20,7 @@ struct Cli {
     /// Path to the project directory or file to parse
     project_path: PathBuf,
     /// Name of desired output file
+    #[arg(value_name = "gui | *.png | *.svg")]
     output_filename: Option<String>,
     /// Enable verbose output
     #[arg(short, long)]
