@@ -10,8 +10,8 @@
     <img alt="GitHub License" src="https://img.shields.io/github/license/tarolling/seiri" referrerpolicy="noreferrer">
   </a>
   <img alt="GitHub Downloads (all assets, all releases)" src="https://img.shields.io/github/downloads/tarolling/seiri/total" referrerpolicy="noreferrer">
-  <a href="https://github.com/tarolling/seiri/actions/workflows/build.yml">
-    <img alt="Build" src="https://github.com/tarolling/seiri/actions/workflows/build.yml/badge.svg" referrerpolicy="noreferrer">
+  <a href="https://github.com/tarolling/seiri/actions/workflows/ci.yml">
+    <img alt="Continuous Integration - Build and Tests" src="https://github.com/tarolling/seiri/actions/workflows/ci.yml/badge.svg" referrerpolicy="noreferrer">
   </a>
   <a href="https://discord.gg/UrS8hc5HTz">
     <img alt="Discord" src="https://img.shields.io/discord/1405023319962550333" referrerpolicy="noreferrer">
