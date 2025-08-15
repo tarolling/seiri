@@ -13,17 +13,15 @@
   <a href="https://github.com/tarolling/seiri/actions/workflows/build.yml">
     <img alt="Build" src="https://github.com/tarolling/seiri/actions/workflows/build.yml/badge.svg" referrerpolicy="noreferrer">
   </a>
-</div>
-
-<div align="center">
   <a href="https://discord.gg/UrS8hc5HTz">
     <img alt="Discord" src="https://img.shields.io/discord/1405023319962550333" referrerpolicy="noreferrer">
   </a>
 </div>
 
-<p align="center">
+<h3 align="center">
   A platform-agnostic project visualization tool.
-</p>
+</h3>
+<br>
 
 <div align="center">
   <img alt="Sample output" src="./docs/example.png" style="width: 85%;">
