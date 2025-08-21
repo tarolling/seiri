@@ -1,8 +1,9 @@
+use crate::analysis::GraphAnalysis;
 use crate::core::defs::GraphNode;
 use crate::layout::{self, LayoutType};
-use crate::analysis::GraphAnalysis;
 use eframe::egui;
 use petgraph::{Graph, graph::NodeIndex};
+use std::collections::HashMap;
 
 pub struct SeiriGraph {
     pub graph_nodes: Vec<GraphNode>,
@@ -13,7 +14,7 @@ pub struct SeiriGraph {
 
     // Node layout
     node_positions: Vec<egui::Vec2>,
-    layout_type: crate::layout::LayoutType,
+    layout_type: LayoutType,
 
     // Interaction state
     selected_node: Option<usize>,
@@ -32,7 +33,7 @@ pub struct SeiriGraph {
     // Node size calculation
     min_loc: u32,
     max_loc: u32,
-    
+
     // Graph analysis
     graph_analysis: Option<crate::analysis::GraphAnalysis>,
 }
@@ -167,7 +168,8 @@ impl SeiriGraph {
     fn get_node_color(&self, index: usize) -> egui::Color32 {
         let node = &self.graph_nodes[index];
         let is_external = !node.data().file().exists();
-        let in_largest_scc = self.graph_analysis
+        let in_largest_scc = self
+            .graph_analysis
             .as_ref()
             .map(|analysis| analysis.is_in_largest_scc(NodeIndex::new(index)))
             .unwrap_or(false);
@@ -176,8 +178,7 @@ impl SeiriGraph {
         let base_color = if in_largest_scc {
             egui::Color32::from_rgb(255, 100, 100) // Red for SCC nodes
         } else if is_external {
-            egui::Color32::from_hex(node.data().language().color())
-                .unwrap_or(egui::Color32::GRAY)
+            egui::Color32::from_hex(node.data().language().color()).unwrap_or(egui::Color32::GRAY)
         } else {
             egui::Color32::from_hex(node.data().language().color())
                 .map(|c| c.gamma_multiply(0.5))
@@ -446,7 +447,7 @@ impl eframe::App for SeiriGraph {
                     ui.collapsing("Strongly Connected Components", |ui| {
                         ui.label(format!("Total SCCs: {}", analysis.scc_sizes.len()));
                         ui.label(format!("Largest SCC size: {}", analysis.largest_scc_size));
-                        
+
                         ui.add_space(4.0);
                         ui.label("Files in largest SCC:");
                         egui::ScrollArea::vertical()
@@ -454,40 +455,28 @@ impl eframe::App for SeiriGraph {
                             .show(ui, |ui| {
                                 for node_idx in &analysis.largest_scc_nodes {
                                     let node = &self.graph_nodes[node_idx.index()];
-                                    ui.label(format!("• {}", node.data().file().file_name().unwrap_or_default().to_string_lossy()));
+                                    ui.label(format!(
+                                        "• {}",
+                                        node.data()
+                                            .file()
+                                            .file_name()
+                                            .unwrap_or_default()
+                                            .to_string_lossy()
+                                    ));
                                 }
                             });
 
-                        // Show SCCs by size
+                        // Show SCC size distribution
                         ui.add_space(8.0);
-                        ui.label("Strongly Connected Components:");
-                        
-                        let mut sizes: Vec<_> = analysis.sccs_by_size.keys().collect();
-                        sizes.sort_by(|a, b| b.cmp(a)); // Sort by size descending
-                        
-                        for &size in sizes {
-                            if size > 1 { // Only show non-trivial SCCs
-                                let sccs = &analysis.sccs_by_size[&size];
-                                ui.collapsing(format!("Size {}: {} SCCs", size, sccs.len()), |ui| {
-                                    for (idx, scc) in sccs.iter().enumerate() {
-                                        ui.collapsing(format!("SCC #{}", idx + 1), |ui| {
-                                            for &node_idx in scc {
-                                                let node = &self.graph_nodes[node_idx.index()];
-                                                let file_name = node.data().file().file_name()
-                                                    .unwrap_or_default()
-                                                    .to_string_lossy();
-                                                if ui.selectable_label(false, format!("• {}", file_name)).clicked() {
-                                                    self.selected_node = Some(node_idx.index());
-                                                    
-                                                    // Center the view on the selected node
-                                                    let pos = self.node_positions[node_idx.index()];
-                                                    self.camera_pos = pos;
-                                                }
-                                            }
-                                        });
-                                    }
-                                });
-                            }
+                        ui.label("SCC Size Distribution:");
+                        let mut size_dist = HashMap::new();
+                        for &size in &analysis.scc_sizes {
+                            *size_dist.entry(size).or_insert(0) += 1;
+                        }
+                        let mut sizes: Vec<_> = size_dist.into_iter().collect();
+                        sizes.sort_by_key(|&(size, _)| size);
+                        for (size, count) in sizes {
+                            ui.label(format!("{} nodes: {} SCCs", size, count));
                         }
                     });
 
