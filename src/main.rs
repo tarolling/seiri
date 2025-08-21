@@ -1,6 +1,7 @@
 mod gui;
 use gui::run_gui;
 
+mod analysis;
 mod core;
 mod export;
 mod parsers;

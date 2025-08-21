@@ -1,5 +1,8 @@
 use crate::core::defs::GraphNode;
+use crate::layout::{self, LayoutType};
+use crate::analysis::GraphAnalysis;
 use eframe::egui;
+use petgraph::{Graph, graph::NodeIndex};
 
 pub struct SeiriGraph {
     pub graph_nodes: Vec<GraphNode>,
@@ -10,6 +13,7 @@ pub struct SeiriGraph {
 
     // Node layout
     node_positions: Vec<egui::Vec2>,
+    layout_type: crate::layout::LayoutType,
 
     // Interaction state
     selected_node: Option<usize>,
@@ -28,6 +32,9 @@ pub struct SeiriGraph {
     // Node size calculation
     min_loc: u32,
     max_loc: u32,
+    
+    // Graph analysis
+    graph_analysis: Option<crate::analysis::GraphAnalysis>,
 }
 
 impl SeiriGraph {
@@ -51,6 +58,7 @@ impl SeiriGraph {
             camera_pos: egui::Vec2::ZERO,
             zoom: 1.0,
             node_positions: vec![egui::Vec2::ZERO; n],
+            layout_type: crate::layout::LayoutType::default(),
             selected_node: None,
             hovered_node: None,
             dragging_node: None,
@@ -63,6 +71,7 @@ impl SeiriGraph {
             show_dependencies: true,
             min_loc,
             max_loc,
+            graph_analysis: None,
         };
         app.initialize_positions();
         app
@@ -74,11 +83,76 @@ impl SeiriGraph {
             return;
         }
 
-        // Start with a circle layout
-        let radius = 150.0;
-        for i in 0..n {
-            let angle = i as f32 * std::f32::consts::TAU / n as f32;
-            self.node_positions[i] = egui::vec2(angle.cos() * radius, angle.sin() * radius);
+        // Create a graph for layout
+        let mut graph = Graph::new();
+        let mut node_indices = Vec::with_capacity(n);
+
+        // Add nodes
+        for _ in 0..n {
+            node_indices.push(graph.add_node(()));
+        }
+
+        // Add edges based on dependencies
+        for (from_idx, node) in self.graph_nodes.iter().enumerate() {
+            for (dep_idx, _edge) in node.edges().iter().enumerate() {
+                graph.add_edge(node_indices[from_idx], node_indices[dep_idx], ());
+            }
+        }
+
+        // Get layout positions
+        let layout = layout::create_layout(self.layout_type);
+        let raw_positions = layout.layout(&graph);
+
+        // Find the bounds of the layout
+        let mut min_x = f32::INFINITY;
+        let mut min_y = f32::INFINITY;
+        let mut max_x = f32::NEG_INFINITY;
+        let mut max_y = f32::NEG_INFINITY;
+
+        for &(x, y) in raw_positions.values() {
+            min_x = min_x.min(x);
+            min_y = min_y.min(y);
+            max_x = max_x.max(x);
+            max_y = max_y.max(y);
+        }
+
+        // Calculate center and scale
+        let width = max_x - min_x;
+        let height = max_y - min_y;
+        let target_size = 800.0; // Target layout size
+        let scale = if width > height {
+            target_size / width
+        } else {
+            target_size / height
+        };
+
+        // Center of the layout
+        let center_x = (min_x + max_x) / 2.0;
+        let center_y = (min_y + max_y) / 2.0;
+
+        // Convert positions to egui coordinates
+        for (i, node_idx) in node_indices.iter().enumerate() {
+            if let Some(&(x, y)) = raw_positions.get(node_idx) {
+                // Scale and center the coordinates
+                let scaled_x = (x - center_x) * scale;
+                let scaled_y = (y - center_y) * scale;
+                self.node_positions[i] = egui::vec2(scaled_x, scaled_y);
+            }
+        }
+
+        // Analyze graph structure
+        self.graph_analysis = Some(GraphAnalysis::analyze_graph(&graph));
+
+        // Reset camera and zoom to frame the layout
+        self.camera_pos = egui::Vec2::ZERO;
+        self.zoom = 1.0;
+        let positions = layout.layout(&graph);
+
+        // Convert positions to egui coordinates
+        for (i, node_idx) in node_indices.iter().enumerate() {
+            if let Some(&(x, y)) = positions.get(node_idx) {
+                self.node_positions[i] = egui::vec2(x, y);
+            }
         }
     }
 
@@ -93,14 +167,21 @@ impl SeiriGraph {
     fn get_node_color(&self, index: usize) -> egui::Color32 {
         let node = &self.graph_nodes[index];
         let is_external = !node.data().file().exists();
+        let in_largest_scc = self.graph_analysis
+            .as_ref()
+            .map(|analysis| analysis.is_in_largest_scc(NodeIndex::new(index)))
+            .unwrap_or(false);
 
-        // change base color based on internal or external node
-        let base_color = if is_external {
+        // change base color based on node type
+        let base_color = if in_largest_scc {
+            egui::Color32::from_rgb(255, 100, 100) // Red for SCC nodes
+        } else if is_external {
             egui::Color32::from_hex(node.data().language().color())
+                .unwrap_or(egui::Color32::GRAY)
         } else {
-            Ok(egui::Color32::from_hex(node.data().language().color())
-                .expect("Error parsing color hex code")
-                .gamma_multiply(0.5)) // Internal project files
+            egui::Color32::from_hex(node.data().language().color())
+                .map(|c| c.gamma_multiply(0.5))
+                .unwrap_or(egui::Color32::GRAY)
         };
 
         if Some(index) == self.selected_node {
@@ -108,7 +189,7 @@ impl SeiriGraph {
         } else if Some(index) == self.hovered_node {
             egui::Color32::LIGHT_BLUE
         } else {
-            base_color.expect("Error parsing color hex code")
+            base_color
         }
     }
 
@@ -353,26 +434,124 @@ impl SeiriGraph {
 
 impl eframe::App for SeiriGraph {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Analysis panel on the right
+        egui::SidePanel::right("analysis_panel")
+            .default_width(250.0)
+            .show(ctx, |ui| {
+                ui.heading("Graph Analysis");
+                ui.add_space(8.0);
+
+                if let Some(analysis) = &self.graph_analysis {
+                    // SCCs summary
+                    ui.collapsing("Strongly Connected Components", |ui| {
+                        ui.label(format!("Total SCCs: {}", analysis.scc_sizes.len()));
+                        ui.label(format!("Largest SCC size: {}", analysis.largest_scc_size));
+                        
+                        ui.add_space(4.0);
+                        ui.label("Files in largest SCC:");
+                        egui::ScrollArea::vertical()
+                            .max_height(150.0)
+                            .show(ui, |ui| {
+                                for node_idx in &analysis.largest_scc_nodes {
+                                    let node = &self.graph_nodes[node_idx.index()];
+                                    ui.label(format!("• {}", node.data().file().file_name().unwrap_or_default().to_string_lossy()));
+                                }
+                            });
+
+                        // Show SCCs by size
+                        ui.add_space(8.0);
+                        ui.label("Strongly Connected Components:");
+                        
+                        let mut sizes: Vec<_> = analysis.sccs_by_size.keys().collect();
+                        sizes.sort_by(|a, b| b.cmp(a)); // Sort by size descending
+                        
+                        for &size in sizes {
+                            if size > 1 { // Only show non-trivial SCCs
+                                let sccs = &analysis.sccs_by_size[&size];
+                                ui.collapsing(format!("Size {}: {} SCCs", size, sccs.len()), |ui| {
+                                    for (idx, scc) in sccs.iter().enumerate() {
+                                        ui.collapsing(format!("SCC #{}", idx + 1), |ui| {
+                                            for &node_idx in scc {
+                                                let node = &self.graph_nodes[node_idx.index()];
+                                                let file_name = node.data().file().file_name()
+                                                    .unwrap_or_default()
+                                                    .to_string_lossy();
+                                                if ui.selectable_label(false, format!("• {}", file_name)).clicked() {
+                                                    self.selected_node = Some(node_idx.index());
+                                                    
+                                                    // Center the view on the selected node
+                                                    let pos = self.node_positions[node_idx.index()];
+                                                    self.camera_pos = pos;
+                                                }
+                                            }
+                                        });
+                                    }
+                                });
+                            }
+                        }
+                    });
+
+                    // Highlight options
+                    ui.add_space(16.0);
+                    if analysis.largest_scc_size > 1 {
+                        if ui.button("Highlight Largest SCC").clicked() {
+                            if let Some(selected) = self.selected_node {
+                                if !analysis.is_in_largest_scc(NodeIndex::new(selected)) {
+                                    self.selected_node = None;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
         // Controls panel
         egui::TopBottomPanel::top("controls").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.heading("Project Structure Graph");
-                ui.separator();
-
-                if ui.button("Reset Layout").clicked() {
-                    self.initialize_positions();
-                }
 
                 ui.separator();
-                ui.checkbox(&mut self.show_labels, "Show Labels");
-                ui.checkbox(&mut self.show_dependencies, "Show Dependencies");
+
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut self.show_labels, "Show Labels");
+                    ui.checkbox(&mut self.show_dependencies, "Show Dependencies");
+                });
 
                 ui.separator();
-                ui.label(format!(
-                    "Nodes: {} | Zoom: {:.1}x",
-                    self.graph_nodes.len(),
-                    self.zoom
-                ));
+
+                egui::ComboBox::from_label("Layout")
+                    .selected_text(match self.layout_type {
+                        LayoutType::Circular => "Circular",
+                        LayoutType::Sugiyama => "Sugiyama",
+                    })
+                    .show_ui(ui, |ui| {
+                        let mut changed = false;
+                        changed |= ui
+                            .selectable_value(
+                                &mut self.layout_type,
+                                LayoutType::Circular,
+                                "Circular",
+                            )
+                            .clicked();
+                        changed |= ui
+                            .selectable_value(
+                                &mut self.layout_type,
+                                LayoutType::Sugiyama,
+                                "Sugiyama",
+                            )
+                            .clicked();
+                        if changed {
+                            self.initialize_positions();
+                        }
+                    });
+
+                ui.separator();
+
+                ui.label(format!("Nodes: {}", self.graph_nodes.len()));
+
+                ui.separator();
+
+                ui.label(format!("Zoom: {:.1}x", self.zoom));
             });
         });
 
