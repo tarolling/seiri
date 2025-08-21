@@ -1,8 +1,10 @@
 mod gui;
 use gui::run_gui;
 
+mod analysis;
 mod core;
 mod export;
+mod layout;
 mod parsers;
 
 use clap::Parser;
