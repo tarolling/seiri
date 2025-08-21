@@ -6,16 +6,11 @@ use petgraph::graph::{Graph, NodeIndex};
 use std::collections::HashMap;
 use sugiyama::{SugiyamaConfig, SugiyamaLayout};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum LayoutType {
+    #[default]
     Circular,
     Sugiyama,
-}
-
-impl Default for LayoutType {
-    fn default() -> Self {
-        LayoutType::Circular
-    }
 }
 
 pub trait Layout {
@@ -29,6 +24,7 @@ pub fn create_layout(layout_type: LayoutType) -> Box<dyn Layout> {
     }
 }
 
+#[allow(dead_code)]
 pub fn default_layout() -> Box<dyn Layout> {
     create_layout(LayoutType::default())
 }

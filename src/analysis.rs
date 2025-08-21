@@ -146,6 +146,7 @@ impl GraphAnalysis {
     }
 
     /// Returns the size of the SCC containing the given node
+    #[allow(dead_code)]
     pub fn get_scc_size(&self, node: NodeIndex) -> Option<usize> {
         self.node_to_scc.get(&node).map(|&idx| self.scc_sizes[idx])
     }

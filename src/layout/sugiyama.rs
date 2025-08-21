@@ -29,6 +29,7 @@ impl Default for SugiyamaConfig {
 struct LayeredNode {
     id: NodeIndex,
     layer: usize,
+    #[allow(dead_code)]
     position: f32,
     is_dummy: bool,
 }
@@ -83,10 +84,10 @@ impl SugiyamaLayout {
                         dfs(neighbor, graph, visited, path, on_stack);
                     } else if on_stack.contains(&neighbor) {
                         // Found a cycle, remove the last edge
-                        if let Some(&last) = path.last() {
-                            if let Some(edge) = graph.find_edge(last, neighbor) {
-                                graph.remove_edge(edge);
-                            }
+                        if let Some(&last) = path.last()
+                            && let Some(edge) = graph.find_edge(last, neighbor)
+                        {
+                            graph.remove_edge(edge);
                         }
                     }
                 }
@@ -151,9 +152,7 @@ impl SugiyamaLayout {
 
         // Handle any remaining unassigned nodes (in case of disconnected components)
         for node in dag.node_indices() {
-            if !node_layers.contains_key(&node) {
-                node_layers.insert(node, 0);
-            }
+            node_layers.entry(node).or_insert(0);
         }
 
         // Group nodes by layer
@@ -176,7 +175,7 @@ impl SugiyamaLayout {
     }
 
     /// Add dummy nodes for edges that span multiple layers
-    fn expand_long_edges(&self, dag: &mut Graph<(), ()>, layers: &mut Vec<Vec<LayeredNode>>) {
+    fn expand_long_edges(&self, dag: &mut Graph<(), ()>, layers: &mut [Vec<LayeredNode>]) {
         let mut new_edges = Vec::new();
         let mut dummy_nodes = Vec::new();
 
@@ -235,10 +234,10 @@ impl SugiyamaLayout {
                         let pos1 = layer2.iter().position(|n| n.id == n1_neighbor);
                         let pos2 = layer2.iter().position(|n| n.id == n2_neighbor);
 
-                        if let (Some(p1), Some(p2)) = (pos1, pos2) {
-                            if (i1 < i2) != (p1 < p2) {
-                                crossings += 1;
-                            }
+                        if let (Some(p1), Some(p2)) = (pos1, pos2)
+                            && (i1 < i2) != (p1 < p2)
+                        {
+                            crossings += 1;
                         }
                     }
                 }
@@ -249,7 +248,7 @@ impl SugiyamaLayout {
     }
 
     /// Reduce edge crossings between layers
-    fn reduce_crossings(&self, layers: &mut Vec<Vec<LayeredNode>>, dag: &Graph<(), ()>) {
+    fn reduce_crossings(&self, layers: &mut [Vec<LayeredNode>], dag: &Graph<(), ()>) {
         for _ in 0..self.config.max_iterations {
             let mut improved = false;
 
@@ -286,7 +285,7 @@ impl SugiyamaLayout {
     fn assign_coordinates(
         &self,
         dag: &Graph<(), ()>,
-        layers: &Vec<Vec<LayeredNode>>,
+        layers: &[Vec<LayeredNode>],
     ) -> HashMap<NodeIndex, (f32, f32)> {
         let mut coordinates = HashMap::new();
         let max_width = layers.iter().map(|layer| layer.len()).max().unwrap_or(1);

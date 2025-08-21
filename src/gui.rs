@@ -482,14 +482,12 @@ impl eframe::App for SeiriGraph {
 
                     // Highlight options
                     ui.add_space(16.0);
-                    if analysis.largest_scc_size > 1 {
-                        if ui.button("Highlight Largest SCC").clicked() {
-                            if let Some(selected) = self.selected_node {
-                                if !analysis.is_in_largest_scc(NodeIndex::new(selected)) {
-                                    self.selected_node = None;
-                                }
-                            }
-                        }
+                    if analysis.largest_scc_size > 1
+                        && ui.button("Highlight Largest SCC").clicked()
+                        && let Some(selected) = self.selected_node
+                        && !analysis.is_in_largest_scc(NodeIndex::new(selected))
+                    {
+                        self.selected_node = None;
                     }
                 }
             });
