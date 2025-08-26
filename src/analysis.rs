@@ -29,7 +29,7 @@ impl GraphAnalysis {
         source: NodeIndex,
         centrality: &mut HashMap<NodeIndex, f64>,
     ) {
-       let mut stack = Vec::new();
+        let mut stack = Vec::new();
         let mut queue = VecDeque::new();
         let mut sigma = HashMap::new();
         let mut distance = HashMap::new();
@@ -75,7 +75,7 @@ impl GraphAnalysis {
                 let contribution = (sigma[&v] / sigma[&w]) * (1.0 + delta[&w]);
                 *delta.get_mut(&v).unwrap() += contribution;
             }
-            
+
             if w != source {
                 *centrality.get_mut(&w).unwrap() += delta[&w];
             }
@@ -454,9 +454,12 @@ mod tests {
     fn test_star_graph_betweenness() {
         // Create a star: center (0) connected to three leaves (1,2,3)
         let graph = create_test_graph(&[
-            (0, 1), (1, 0), // Bidirectional edge
-            (0, 2), (2, 0), // Bidirectional edge  
-            (0, 3), (3, 0)  // Bidirectional edge
+            (0, 1),
+            (1, 0), // Bidirectional edge
+            (0, 2),
+            (2, 0), // Bidirectional edge
+            (0, 3),
+            (3, 0), // Bidirectional edge
         ]);
         let analysis = GraphAnalysis::analyze_graph(&graph);
 
@@ -469,7 +472,9 @@ mod tests {
             println!(
                 "Betweenness centrality of node {}: {}",
                 i,
-                analysis.get_betweenness_centrality(NodeIndex::new(i)).unwrap()
+                analysis
+                    .get_betweenness_centrality(NodeIndex::new(i))
+                    .unwrap()
             );
             assert!(
                 center_score

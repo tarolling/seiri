@@ -180,12 +180,12 @@ impl GraphNode {
     /// Calculate the normalized size for this node based on min/max LOC and betweenness centrality
     /// Returns a value between min_size and max_size
     pub fn calculate_size(
-        &self, 
-        min_loc: u32, 
-        max_loc: u32, 
-        min_size: f32, 
+        &self,
+        min_loc: u32,
+        max_loc: u32,
+        min_size: f32,
         max_size: f32,
-        betweenness: Option<f64>
+        betweenness: Option<f64>,
     ) -> f32 {
         // Calculate base size from LOC
         let base_size = if max_loc == min_loc {
