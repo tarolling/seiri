@@ -12,14 +12,17 @@ pub struct SugiyamaConfig {
     pub node_spacing: f32,
     /// Vertical distance between layers
     pub layer_spacing: f32,
+    /// Scaling factor for the entire layout
+    pub scale_factor: f32,
 }
 
 impl Default for SugiyamaConfig {
     fn default() -> Self {
         Self {
             max_iterations: 50,
-            node_spacing: 50.0,
-            layer_spacing: 70.0,
+            node_spacing: 120.0,
+            layer_spacing: 150.0,
+            scale_factor: 1.5,
         }
     }
 }
@@ -288,22 +291,28 @@ impl SugiyamaLayout {
         layers: &[Vec<LayeredNode>],
     ) -> HashMap<NodeIndex, (f32, f32)> {
         let mut coordinates = HashMap::new();
-        let max_width = layers.iter().map(|layer| layer.len()).max().unwrap_or(1);
+
+        // Calculate the maximum width needed for proper centering
+        let total_height = (layers.len().saturating_sub(1)) as f32 * self.config.layer_spacing;
 
         for (layer_idx, layer) in layers.iter().enumerate() {
-            let y = layer_idx as f32 * self.config.layer_spacing;
-            let layer_width = (layer.len() - 1) as f32 * self.config.node_spacing;
-            let offset = ((max_width - 1) as f32 * self.config.node_spacing - layer_width) / 2.0;
+            let y = (layer_idx as f32 * self.config.layer_spacing - total_height / 2.0)
+                * self.config.scale_factor;
+
+            // Center this layer horizontally
+            let layer_width = (layer.len().saturating_sub(1)) as f32 * self.config.node_spacing;
+            let start_x = -layer_width / 2.0;
 
             for (node_idx, node) in layer.iter().enumerate() {
-                let x = offset + node_idx as f32 * self.config.node_spacing;
+                let x = (start_x + node_idx as f32 * self.config.node_spacing)
+                    * self.config.scale_factor;
                 coordinates.insert(node.id, (x, y));
             }
         }
 
         // Fine-tune positions by averaging connected nodes' x coordinates
         let mut adjusted_coords = coordinates.clone();
-        for _ in 0..2 {
+        for _ in 0..3 {
             // Do a few iterations of position refinement
             for layer in layers.iter() {
                 for node in layer {
@@ -340,7 +349,6 @@ impl SugiyamaLayout {
             }
             coordinates = adjusted_coords.clone();
         }
-
         coordinates
     }
 }
