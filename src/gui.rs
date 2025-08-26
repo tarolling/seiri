@@ -609,12 +609,11 @@ impl eframe::App for SeiriGraph {
                         ui.label(format!("📊 {} lines", node.loc()));
 
                         // Add betweenness centrality score if available
-                        if let Some(analysis) = &self.graph_analysis {
-                            if let Some(score) =
+                        if let Some(analysis) = &self.graph_analysis
+                            && let Some(score) =
                                 analysis.get_betweenness_centrality(NodeIndex::new(selected_idx))
-                            {
-                                ui.label(format!("🔄 Betweenness: {:.3}", score));
-                            }
+                        {
+                            ui.label(format!("🔄 Betweenness: {:.3}", score));
                         }
                     });
 
