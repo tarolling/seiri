@@ -241,11 +241,15 @@ impl SeiriGraph {
             let screen_pos = egui::pos2(screen_pos.x, screen_pos.y);
 
             // Only draw visible nodes
+            let betweenness_score = self.graph_analysis.as_ref()
+                .and_then(|analysis| analysis.get_betweenness_centrality(NodeIndex::new(i)));
+            
             let base_radius = self.graph_nodes[i].calculate_size(
                 self.min_loc,
                 self.max_loc,
                 self.min_node_radius,
                 self.max_node_radius,
+                betweenness_score,
             );
             let node_radius = base_radius * self.zoom;
             if !canvas_rect.expand(node_radius).contains(screen_pos) {
@@ -340,11 +344,15 @@ impl SeiriGraph {
             self.hovered_node = None;
             for (i, _) in self.graph_nodes.iter().enumerate() {
                 let dist = (world_mouse - self.node_positions[i]).length();
+                let betweenness_score = self.graph_analysis.as_ref()
+                    .and_then(|analysis| analysis.get_betweenness_centrality(NodeIndex::new(i)));
+                
                 let node_radius = self.graph_nodes[i].calculate_size(
                     self.min_loc,
                     self.max_loc,
                     self.min_node_radius,
                     self.max_node_radius,
+                    betweenness_score,
                 );
                 if dist < node_radius {
                     self.hovered_node = Some(i);
@@ -481,7 +489,6 @@ impl eframe::App for SeiriGraph {
                     });
 
                     // Highlight options
-                    ui.add_space(16.0);
                     if analysis.largest_scc_size > 1
                         && ui.button("Highlight Largest SCC").clicked()
                         && let Some(selected) = self.selected_node
@@ -489,6 +496,38 @@ impl eframe::App for SeiriGraph {
                     {
                         self.selected_node = None;
                     }
+
+                    // Show top 5 betweenness centrality nodes
+                    ui.collapsing("Top Dependency Chokepoints", |ui| {
+                        ui.label("(Highest betweenness centrality)");
+                        
+                        // Get all nodes with scores
+                        let mut nodes: Vec<_> = (0..self.graph_nodes.len())
+                            .filter_map(|idx| {
+                                analysis.get_betweenness_centrality(NodeIndex::new(idx))
+                                    .map(|score| (idx, score))
+                            })
+                            .collect();
+                        
+                        // Sort by score descending
+                        nodes.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                        
+                        // Show top 5
+                        for (idx, score) in nodes.iter().take(5) {
+                            let node = &self.graph_nodes[*idx];
+                            let name = node.data().file()
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or("unknown");
+                            
+                            if ui.selectable_label(
+                                Some(*idx) == self.selected_node,
+                                format!("{} ({:.3})", name, score)
+                            ).clicked() {
+                                self.selected_node = Some(*idx);
+                            }
+                        }
+                    });
                 }
             });
 
@@ -556,6 +595,13 @@ impl eframe::App for SeiriGraph {
                         ui.label(format!("📁 {}", node.file().display()));
                         ui.label(format!("🔧 {:?}", node.language()));
                         ui.label(format!("📊 {} lines", node.loc()));
+                        
+                        // Add betweenness centrality score if available
+                        if let Some(analysis) = &self.graph_analysis {
+                            if let Some(score) = analysis.get_betweenness_centrality(NodeIndex::new(selected_idx)) {
+                                ui.label(format!("🔄 Betweenness: {:.3}", score));
+                            }
+                        }
                     });
 
                     ui.separator();

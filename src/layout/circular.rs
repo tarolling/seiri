@@ -48,7 +48,6 @@ impl Layout for CircularLayout {
             let y = self.config.radius * angle.sin();
             positions.insert(node, (x, y));
         }
-
         positions
     }
 }

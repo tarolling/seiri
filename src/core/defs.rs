@@ -177,14 +177,31 @@ impl GraphNode {
         self.edges.as_ref()
     }
 
-    /// Calculate the normalized size for this node based on min/max LOC in the graph
+    /// Calculate the normalized size for this node based on min/max LOC and betweenness centrality
     /// Returns a value between min_size and max_size
-    pub fn calculate_size(&self, min_loc: u32, max_loc: u32, min_size: f32, max_size: f32) -> f32 {
-        if max_loc == min_loc {
-            return (min_size + max_size) / 2.0;
+    pub fn calculate_size(
+        &self, 
+        min_loc: u32, 
+        max_loc: u32, 
+        min_size: f32, 
+        max_size: f32,
+        betweenness: Option<f64>
+    ) -> f32 {
+        // Calculate base size from LOC
+        let base_size = if max_loc == min_loc {
+            (min_size + max_size) / 2.0
+        } else {
+            let loc = self.data.loc();
+            let normalized = (loc - min_loc) as f32 / (max_loc - min_loc) as f32;
+            min_size + normalized * (max_size - min_size)
+        };
+
+        // Adjust size based on betweenness centrality if available
+        if let Some(betweenness_score) = betweenness {
+            // Increase size by up to 40% based on betweenness centrality
+            base_size * (1.0 + betweenness_score as f32 * 0.4)
+        } else {
+            base_size
         }
-        let loc = self.data.loc();
-        let normalized = (loc - min_loc) as f32 / (max_loc - min_loc) as f32;
-        min_size + normalized * (max_size - min_size)
     }
 }

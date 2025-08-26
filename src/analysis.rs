@@ -2,7 +2,7 @@ use petgraph::{
     graph::{Graph, NodeIndex},
     visit::EdgeRef,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 #[derive(Debug)]
 pub struct GraphAnalysis {
@@ -17,10 +17,93 @@ pub struct GraphAnalysis {
     /// All SCCs grouped by size (size -> set of SCCs)
     /// Each SCC is a set of node indices
     pub sccs_by_size: HashMap<usize, Vec<HashSet<NodeIndex>>>,
+    /// Betweenness centrality scores for each node
+    /// Higher values indicate nodes that appear on more shortest paths
+    pub betweenness_centrality: HashMap<NodeIndex, f64>,
 }
 
 impl GraphAnalysis {
-    /// Perform Kosaraju's algorithm to find strongly connected components
+    /// Calculate betweenness centrality for a single source node
+    fn calculate_betweenness_from_source(
+        graph: &Graph<(), ()>,
+        source: NodeIndex,
+        centrality: &mut HashMap<NodeIndex, f64>,
+    ) {
+       let mut stack = Vec::new();
+        let mut queue = VecDeque::new();
+        let mut sigma = HashMap::new();
+        let mut distance = HashMap::new();
+        let mut pred: HashMap<NodeIndex, Vec<NodeIndex>> = HashMap::new();
+        let mut delta = HashMap::new();
+
+        // Initialize
+        for node in graph.node_indices() {
+            sigma.insert(node, 0.0);
+            distance.insert(node, -1);
+            pred.insert(node, Vec::new());
+            delta.insert(node, 0.0);
+        }
+
+        sigma.insert(source, 1.0);
+        distance.insert(source, 0);
+        queue.push_back(source);
+
+        // BFS phase - find shortest paths
+        while let Some(v) = queue.pop_front() {
+            stack.push(v);
+            let v_dist = distance[&v];
+            let v_sigma = sigma[&v];
+
+            for neighbor in graph.neighbors(v) {
+                // First time we found this node?
+                if distance[&neighbor] < 0 {
+                    queue.push_back(neighbor);
+                    distance.insert(neighbor, v_dist + 1);
+                }
+
+                // Shortest path to neighbor via v?
+                if distance[&neighbor] == v_dist + 1 {
+                    *sigma.get_mut(&neighbor).unwrap() += v_sigma;
+                    pred.get_mut(&neighbor).unwrap().push(v);
+                }
+            }
+        }
+
+        // Dependency accumulation phase - calculate contributions
+        while let Some(w) = stack.pop() {
+            for &v in &pred[&w] {
+                let contribution = (sigma[&v] / sigma[&w]) * (1.0 + delta[&w]);
+                *delta.get_mut(&v).unwrap() += contribution;
+            }
+            
+            if w != source {
+                *centrality.get_mut(&w).unwrap() += delta[&w];
+            }
+        }
+    }
+
+    /// Calculate betweenness centrality for all nodes
+    fn calculate_betweenness_centrality(graph: &Graph<(), ()>) -> HashMap<NodeIndex, f64> {
+        let mut centrality: HashMap<NodeIndex, f64> =
+            graph.node_indices().map(|n| (n, 0.0)).collect();
+
+        // Calculate betweenness from each source node
+        for source in graph.node_indices() {
+            Self::calculate_betweenness_from_source(graph, source, &mut centrality);
+        }
+
+        // Normalize for undirected graphs
+        if graph.node_count() > 2 {
+            let norm = 1.0 / ((graph.node_count() - 1) * (graph.node_count() - 2)) as f64;
+            for score in centrality.values_mut() {
+                *score *= norm;
+            }
+        }
+
+        centrality
+    }
+
+    /// Analyze the graph to find both SCCs and betweenness centrality
     pub fn analyze_graph(graph: &Graph<(), ()>) -> Self {
         let mut analysis = Self {
             scc_sizes: Vec::new(),
@@ -28,11 +111,15 @@ impl GraphAnalysis {
             largest_scc_size: 0,
             largest_scc_nodes: HashSet::new(),
             sccs_by_size: HashMap::new(),
+            betweenness_centrality: HashMap::new(),
         };
 
         if graph.node_count() == 0 {
             return analysis;
         }
+
+        // Calculate betweenness centrality
+        analysis.betweenness_centrality = Self::calculate_betweenness_centrality(graph);
 
         // Step 1: First DFS to get finishing times
         let mut visited = HashSet::new();
@@ -149,6 +236,12 @@ impl GraphAnalysis {
     #[allow(dead_code)]
     pub fn get_scc_size(&self, node: NodeIndex) -> Option<usize> {
         self.node_to_scc.get(&node).map(|&idx| self.scc_sizes[idx])
+    }
+
+    /// Get the betweenness centrality score for a node
+    #[allow(dead_code)]
+    pub fn get_betweenness_centrality(&self, node: NodeIndex) -> Option<f64> {
+        self.betweenness_centrality.get(&node).copied()
     }
 }
 
@@ -315,5 +408,143 @@ mod tests {
         assert!(analysis.sccs_by_size.get(&3).unwrap().len() == 2); // Two 3-node SCCs
         assert!(analysis.sccs_by_size.get(&2).unwrap().len() == 1); // One 2-node SCC
         assert!(analysis.sccs_by_size.get(&1).unwrap().len() == 2); // Two 1-node SCCs
+    }
+
+    #[test]
+    fn test_empty_graph_betweenness() {
+        let graph = Graph::<(), ()>::new();
+        let analysis = GraphAnalysis::analyze_graph(&graph);
+        assert!(analysis.betweenness_centrality.is_empty());
+    }
+
+    #[test]
+    fn test_single_node_betweenness() {
+        let mut graph = Graph::new();
+        let n0 = graph.add_node(());
+        let analysis = GraphAnalysis::analyze_graph(&graph);
+        assert_eq!(analysis.get_betweenness_centrality(n0), Some(0.0));
+    }
+
+    #[test]
+    fn test_path_graph_betweenness() {
+        // Create a path: 0 -> 1 -> 2
+        let graph = create_test_graph(&[(0, 1), (1, 2)]);
+        let analysis = GraphAnalysis::analyze_graph(&graph);
+
+        // Middle node should have highest betweenness
+        assert!(
+            analysis
+                .get_betweenness_centrality(NodeIndex::new(1))
+                .unwrap()
+                > analysis
+                    .get_betweenness_centrality(NodeIndex::new(0))
+                    .unwrap()
+        );
+        assert!(
+            analysis
+                .get_betweenness_centrality(NodeIndex::new(1))
+                .unwrap()
+                > analysis
+                    .get_betweenness_centrality(NodeIndex::new(2))
+                    .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_star_graph_betweenness() {
+        // Create a star: center (0) connected to three leaves (1,2,3)
+        let graph = create_test_graph(&[
+            (0, 1), (1, 0), // Bidirectional edge
+            (0, 2), (2, 0), // Bidirectional edge  
+            (0, 3), (3, 0)  // Bidirectional edge
+        ]);
+        let analysis = GraphAnalysis::analyze_graph(&graph);
+
+        // Center should have highest betweenness
+        let center_score = analysis
+            .get_betweenness_centrality(NodeIndex::new(0))
+            .unwrap();
+        println!("Betweenness centrality of center node: {}", center_score);
+        for i in 1..4 {
+            println!(
+                "Betweenness centrality of node {}: {}",
+                i,
+                analysis.get_betweenness_centrality(NodeIndex::new(i)).unwrap()
+            );
+            assert!(
+                center_score
+                    > analysis
+                        .get_betweenness_centrality(NodeIndex::new(i))
+                        .unwrap(),
+            );
+        }
+    }
+
+    #[test]
+    fn test_cycle_betweenness() {
+        // Create a cycle: 0 -> 1 -> 2 -> 0
+        let graph = create_test_graph(&[(0, 1), (1, 2), (2, 0)]);
+        let analysis = GraphAnalysis::analyze_graph(&graph);
+
+        // In a cycle, all nodes should have equal betweenness
+        let score = analysis
+            .get_betweenness_centrality(NodeIndex::new(0))
+            .unwrap();
+        assert!(
+            (analysis
+                .get_betweenness_centrality(NodeIndex::new(1))
+                .unwrap()
+                - score)
+                .abs()
+                < 1e-10
+        );
+        assert!(
+            (analysis
+                .get_betweenness_centrality(NodeIndex::new(2))
+                .unwrap()
+                - score)
+                .abs()
+                < 1e-10
+        );
+    }
+
+    #[test]
+    fn test_bridge_node_betweenness() {
+        // Create two triangles connected by a bridge node:
+        // 0 -> 1 -> 2 -> 0 (first triangle)
+        // 3 -> 4 -> 5 -> 3 (second triangle)
+        // 2 -> 3 (bridge)
+        let graph = create_test_graph(&[
+            (0, 1),
+            (1, 2),
+            (2, 0), // First triangle
+            (3, 4),
+            (4, 5),
+            (5, 3), // Second triangle
+            (2, 3), // Bridge
+        ]);
+        let analysis = GraphAnalysis::analyze_graph(&graph);
+
+        // Nodes 2 and 3 (the bridge nodes) should have higher betweenness
+        let bridge_score1 = analysis
+            .get_betweenness_centrality(NodeIndex::new(2))
+            .unwrap();
+        let bridge_score2 = analysis
+            .get_betweenness_centrality(NodeIndex::new(3))
+            .unwrap();
+        for i in [0, 1, 4, 5] {
+            assert!(
+                bridge_score1
+                    > analysis
+                        .get_betweenness_centrality(NodeIndex::new(i))
+                        .unwrap()
+            );
+            assert!(
+                bridge_score2
+                    > analysis
+                        .get_betweenness_centrality(NodeIndex::new(i))
+                        .unwrap()
+            );
+        }
     }
 }
