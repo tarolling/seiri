@@ -76,7 +76,7 @@ pub fn export_graph_as_svg(graph_nodes: &[GraphNode], output_path: &Path) -> Res
     // Add nodes with labels
     for node in graph_nodes {
         let (x, y) = positions.get(node.data().file()).unwrap();
-        let radius = node.calculate_size(min_loc, max_loc, MIN_NODE_RADIUS, MAX_NODE_RADIUS);
+        let radius = node.calculate_size(min_loc, max_loc, MIN_NODE_RADIUS, MAX_NODE_RADIUS, None);
 
         // Node circle
         let circle = Circle::new()
@@ -211,7 +211,8 @@ pub fn export_graph_as_png(graph_nodes: &[GraphNode], output_path: &Path) -> Res
     // Draw nodes
     for node in graph_nodes {
         let (x, y) = positions[node.data().file()];
-        let node_radius = node.calculate_size(min_loc, max_loc, MIN_NODE_RADIUS, MAX_NODE_RADIUS);
+        let node_radius =
+            node.calculate_size(min_loc, max_loc, MIN_NODE_RADIUS, MAX_NODE_RADIUS, None);
 
         // Circle fill
         let mut fill_paint = Paint::default();
