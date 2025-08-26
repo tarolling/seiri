@@ -1,11 +1,14 @@
 name: CI
 
 on:
+  push:
+    branches: ["92-*"]
   pull_request:
     branches: [ "main" ]
 
 env:
   CARGO_TERM_COLOR: always
+  COVERAGE_THRESHOLD: 50
 
 jobs:
   lint:
@@ -50,24 +53,41 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@fb51252c7ba57d633bc668f941da052e410add48 # v1.13.0
       - run: cargo check --all-features
 
-  build:
-    name: Build and Test
+  test-and-coverage:
+    name: Test and Coverage
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    strategy:
-      matrix:
-        BUILD_TARGET: [release] # cargo profile
     steps:
     - uses: actions/checkout@v4
+    - name: Install Rust toolchain
+      uses: actions-rust-lang/setup-rust-toolchain@fb51252c7ba57d633bc668f941da052e410add48 # v1.13.0
+      with:
+        toolchain: stable
+        override: true
 
     - name: Install dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y pkg-config libx11-dev libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev libgl1-mesa-dev ttf-mscorefonts-installer libfontconfig-dev
 
-    - name: Build binaries in "${{ matrix.BUILD_TARGET }}" mode
-      run: cargo build --verbose --profile ${{ matrix.BUILD_TARGET }}
+    - name: Install cargo-tarpaulin
+      run: cargo install cargo-tarpaulin
 
-    - name: Run tests in "${{ matrix.BUILD_TARGET }}" mode
-      run: cargo test --verbose --profile ${{ matrix.BUILD_TARGET }}
+    - name: Run tests with coverage
+      run: |
+        cargo tarpaulin --verbose --all-features --workspace --timeout 120 \
+          --exclude-files src/main.rs \
+          --out xml --output-dir coverage
+
+    - name: Check coverage threshold
+      run: |
+        COVERAGE=$(cargo tarpaulin --print-summary --all-features --workspace --timeout 120 --exclude-files src/main.rs | grep -oP 'Coverage: \K[0-9.]+')
+        echo "Current coverage: ${COVERAGE}%"
+        echo "Required coverage: ${COVERAGE_THRESHOLD}%"
+        if (( $(echo "${COVERAGE} < ${COVERAGE_THRESHOLD}" | bc -l) )); then
+          echo "❌ Coverage ${COVERAGE}% is below threshold ${COVERAGE_THRESHOLD}%"
+          exit 1
+        else
+          echo "✅ Coverage ${COVERAGE}% meets threshold ${COVERAGE_THRESHOLD}%"
+        fi
