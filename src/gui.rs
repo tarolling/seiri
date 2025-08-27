@@ -234,18 +234,22 @@ impl SeiriGraph {
                             // Calculate arrow direction
                             let dir = (to_pos - from_pos).normalized();
                             let arrow_size = 10.0 * self.zoom.sqrt();
-                            let arrow_angle : f32 = 0.5; // ~30 degrees in radians
+                            let arrow_angle: f32 = 0.5; // ~30 degrees in radians
 
                             // Calculate arrowhead points
                             let arrow_end = to_pos - dir * (20.0 * self.zoom.sqrt()); // Pull back from the end
-                            let left = arrow_end + arrow_size * egui::vec2(
-                                -dir.x * arrow_angle.cos() + dir.y * arrow_angle.sin(),
-                                -dir.x * arrow_angle.sin() - dir.y * arrow_angle.cos(),
-                            );
-                            let right = arrow_end + arrow_size * egui::vec2(
-                                -dir.x * arrow_angle.cos() - dir.y * arrow_angle.sin(),
-                                dir.x * arrow_angle.sin() - dir.y * arrow_angle.cos(),
-                            );
+                            let left = arrow_end
+                                + arrow_size
+                                    * egui::vec2(
+                                        -dir.x * arrow_angle.cos() + dir.y * arrow_angle.sin(),
+                                        -dir.x * arrow_angle.sin() - dir.y * arrow_angle.cos(),
+                                    );
+                            let right = arrow_end
+                                + arrow_size
+                                    * egui::vec2(
+                                        -dir.x * arrow_angle.cos() - dir.y * arrow_angle.sin(),
+                                        dir.x * arrow_angle.sin() - dir.y * arrow_angle.cos(),
+                                    );
 
                             // Draw arrowhead
                             painter.add(egui::Shape::convex_polygon(
