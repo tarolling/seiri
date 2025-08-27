@@ -7,7 +7,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 use svg::Document;
-use svg::node::element::{Circle, Line, Text, Title};
+use svg::node::element::{Circle, Line, Text, Title, Marker, path::Data};
 use tiny_skia::{Color, FillRule, Paint, PathBuilder, Pixmap, Rect, Shader, Stroke, Transform};
 
 const CANVAS_WIDTH: f32 = 1200.0;
@@ -55,19 +55,42 @@ pub fn export_graph_as_svg(graph_nodes: &[GraphNode], output_path: &Path) -> Res
         .set("viewBox", (0, 0, CANVAS_WIDTH as i32, CANVAS_HEIGHT as i32))
         .set("style", "background-color: white");
 
+    // Add arrow marker definition
+    let marker = Marker::new()
+        .set("id", "arrowhead")
+        .set("markerWidth", 10)
+        .set("markerHeight", 7)
+        .set("refX", 10)
+        .set("refY", 3.5)
+        .set("orient", "auto");
+    
+    let path = Data::new()
+        .move_to((0, 0))
+        .line_to((10, 3.5))
+        .line_to((0, 7))
+        .close();
+    
+    let arrow = svg::node::element::Path::new()
+        .set("d", path)
+        .set("fill", "lightblue");
+    
+    document = document.add(marker.add(arrow));
+
     // Add edges first (so they appear under nodes)
     for node in graph_nodes {
         let (start_x, start_y) = positions.get(node.data().file()).unwrap();
 
         for edge in node.edges() {
             if let Some((end_x, end_y)) = positions.get(edge) {
+                // Add the edge with the arrow marker
                 let edge = Line::new()
                     .set("x1", *start_x)
                     .set("y1", *start_y)
                     .set("x2", *end_x)
                     .set("y2", *end_y)
                     .set("stroke", "lightblue")
-                    .set("stroke-width", 2);
+                    .set("stroke-width", 2)
+                    .set("marker-end", "url(#arrowhead)");
                 document = document.add(edge);
             }
         }
@@ -199,11 +222,46 @@ pub fn export_graph_as_png(graph_nodes: &[GraphNode], output_path: &Path) -> Res
         let (sx, sy) = positions[node.data().file()];
         for edge in node.edges() {
             if let Some(&(ex, ey)) = positions.get(edge) {
+                // Draw the main line
                 let mut pb = PathBuilder::new();
                 pb.move_to(sx, sy);
                 pb.line_to(ex, ey);
                 let path = pb.finish().unwrap();
                 pixmap.stroke_path(&path, &edge_paint, &stroke, Transform::identity(), None);
+
+                // Calculate arrow direction and points
+                let dx = ex - sx;
+                let dy = ey - sy;
+                let length = (dx * dx + dy * dy).sqrt();
+                if length > 0.0 {
+                    let arrow_size = 10.0;
+                    let arrow_angle = 0.5f32; // ~30 degrees in radians
+                    
+                    // Normalize direction vector
+                    let dir_x = dx / length;
+                    let dir_y = dy / length;
+                    
+                    // Calculate arrow tip position (pulled back from end point)
+                    let tip_x = ex - dir_x * 20.0;
+                    let tip_y = ey - dir_y * 20.0;
+                    
+                    // Calculate arrow wing points
+                    let left_x = tip_x + arrow_size * (-dir_x * arrow_angle.cos() + dir_y * arrow_angle.sin());
+                    let left_y = tip_y + arrow_size * (-dir_x * arrow_angle.sin() - dir_y * arrow_angle.cos());
+                    let right_x = tip_x + arrow_size * (-dir_x * arrow_angle.cos() - dir_y * arrow_angle.sin());
+                    let right_y = tip_y + arrow_size * (dir_x * arrow_angle.sin() - dir_y * arrow_angle.cos());
+                    
+                    // Draw arrowhead
+                    let mut arrow_pb = PathBuilder::new();
+                    arrow_pb.move_to(ex, ey);
+                    arrow_pb.line_to(left_x, left_y);
+                    arrow_pb.line_to(right_x, right_y);
+                    arrow_pb.close();
+                    
+                    if let Some(arrow_path) = arrow_pb.finish() {
+                        pixmap.fill_path(&arrow_path, &edge_paint, FillRule::Winding, Transform::identity(), None);
+                    }
+                }
             }
         }
     }
