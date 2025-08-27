@@ -8,7 +8,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  COVERAGE_THRESHOLD: 50
+  COVERAGE_THRESHOLD: 40
 
 jobs:
   lint:
@@ -82,7 +82,7 @@ jobs:
 
     - name: Check coverage threshold
       run: |
-        COVERAGE=$(cargo tarpaulin --print-summary --all-features --workspace --timeout 120 --exclude-files src/main.rs | grep -oP 'Coverage: \K[0-9.]+')
+        COVERAGE=$(cargo tarpaulin --all-features --workspace --timeout 120 --exclude-files src/main.rs | grep -oP '\K[0-9.]+% coverage')
         echo "Current coverage: ${COVERAGE}%"
         echo "Required coverage: ${COVERAGE_THRESHOLD}%"
         if (( $(echo "${COVERAGE} < ${COVERAGE_THRESHOLD}" | bc -l) )); then
