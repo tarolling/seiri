@@ -222,6 +222,7 @@ impl SeiriGraph {
                                     egui::Color32::from_rgba_premultiplied(100, 150, 200, 80)
                                 };
 
+                            // Draw the main line
                             painter.line_segment(
                                 [
                                     egui::pos2(from_pos.x, from_pos.y),
@@ -229,6 +230,37 @@ impl SeiriGraph {
                                 ],
                                 egui::Stroke::new(2.0 * self.zoom.sqrt(), edge_color),
                             );
+
+                            // Calculate arrow direction
+                            let dir = (to_pos - from_pos).normalized();
+                            let arrow_size = 10.0 * self.zoom.sqrt();
+                            let arrow_angle: f32 = 0.5; // ~30 degrees in radians
+
+                            // Calculate arrowhead points
+                            let arrow_end = to_pos - dir * (20.0 * self.zoom.sqrt()); // Pull back from the end
+                            let left = arrow_end
+                                + arrow_size
+                                    * egui::vec2(
+                                        -dir.x * arrow_angle.cos() + dir.y * arrow_angle.sin(),
+                                        -dir.x * arrow_angle.sin() - dir.y * arrow_angle.cos(),
+                                    );
+                            let right = arrow_end
+                                + arrow_size
+                                    * egui::vec2(
+                                        -dir.x * arrow_angle.cos() - dir.y * arrow_angle.sin(),
+                                        dir.x * arrow_angle.sin() - dir.y * arrow_angle.cos(),
+                                    );
+
+                            // Draw arrowhead
+                            painter.add(egui::Shape::convex_polygon(
+                                vec![
+                                    egui::pos2(to_pos.x, to_pos.y),
+                                    egui::pos2(left.x, left.y),
+                                    egui::pos2(right.x, right.y),
+                                ],
+                                edge_color,
+                                egui::Stroke::new(1.0, edge_color),
+                            ));
                         }
                     }
                 }

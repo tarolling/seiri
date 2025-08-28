@@ -1,2 +1,0 @@
-#[cfg(bench)]
-fn test() {}
