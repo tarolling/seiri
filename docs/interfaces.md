@@ -35,3 +35,14 @@ is equivalent to
   "level": 0
 }
 ```
+
+```mermaid
+flowchart LR;
+
+  File --> Parser;
+  Parser --> Resolver;
+  Resolver --> nodes["Graph Nodes + Edges"];
+  nodes --> GUI;
+  nodes --> PNG;
+  nodes --> SVG;
+```
