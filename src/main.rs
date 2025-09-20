@@ -7,7 +7,7 @@ mod export;
 mod layout;
 mod parsers;
 
-use clap::{crate_name, crate_version, Parser};
+use clap::{Parser, crate_name, crate_version};
 use core::defs::{FileNode, Language};
 use core::resolvers::GraphBuilder;
 use ignore::WalkBuilder;
@@ -38,13 +38,13 @@ struct Cli {
 impl Cli {
     fn validate(&self) -> Result<(), String> {
         // Validate project path exists if provided
-        if let Some(ref project_path) = self.project_path {
-            if !project_path.exists() {
-                return Err(format!(
-                    "The specified project path does not exist: {:?}",
-                    project_path
-                ));
-            }
+        if let Some(ref project_path) = self.project_path
+            && !project_path.exists()
+        {
+            return Err(format!(
+                "The specified project path does not exist: {:?}",
+                project_path
+            ));
         }
 
         // Validate output filename if provided
@@ -219,7 +219,10 @@ fn run(args: Cli) -> Result<(), String> {
         }
     } else {
         // Default to GUI if no output specified
-        run_gui(graph_nodes);
+        #[cfg(not(test))]
+        {
+            run_gui(graph_nodes);
+        }
         return Ok(());
     }
 
@@ -318,7 +321,6 @@ mod tests {
         };
 
         let result = run(args);
-
         assert!(result.is_ok());
     }
 
