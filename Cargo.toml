@@ -2,9 +2,12 @@
 name = "seiri-cli"
 version = "0.2.4"
 edition = "2024"
+license = "MIT"
+repository = "https://github.com/tarolling/seiri/"
+authors = ["tarolling <benitojoens@gmail.com>"]
 
 [dependencies]
-clap = { version = "4.5.44", features = ["derive"] }
+clap = { version = "4.5.44", features = ["derive", "cargo"] }
 eframe = { version = "0.32.0" }
 egui = "0.32.0"
 fontdue = "0.9.3"
