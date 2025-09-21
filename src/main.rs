@@ -7,7 +7,7 @@ mod export;
 mod layout;
 mod parsers;
 
-use clap::Parser;
+use clap::{Parser, crate_name, crate_version};
 use core::defs::{FileNode, Language};
 use core::resolvers::GraphBuilder;
 use ignore::WalkBuilder;
@@ -20,13 +20,16 @@ use std::path::{Path, PathBuf};
 #[derive(Parser)]
 struct Cli {
     /// Path to the project directory or file to parse
-    project_path: PathBuf,
+    project_path: Option<PathBuf>,
     /// Name of desired output file
     #[arg(value_name = "gui | *.png | *.svg")]
     output_filename: Option<String>,
     /// Enable verbose output
     #[arg(short, long)]
     verbose: bool,
+    /// Show version information
+    #[arg(short = 'V', long = "version")]
+    version: bool,
     /// Ignore .gitignore files
     #[arg(long)]
     no_gitignore: bool,
@@ -34,19 +37,13 @@ struct Cli {
 
 impl Cli {
     fn validate(&self) -> Result<(), String> {
-        // Validate project path exists
-        if !self.project_path.exists() {
+        // Validate project path exists if provided
+        if let Some(ref project_path) = self.project_path
+            && !project_path.exists()
+        {
             return Err(format!(
                 "The specified project path does not exist: {:?}",
-                self.project_path
-            ));
-        }
-
-        // Validate project path is a dir or file
-        if !self.project_path.is_dir() && !self.project_path.is_file() {
-            return Err(format!(
-                "The specified project path is not a file or directory: {:?}",
-                self.project_path
+                project_path
             ));
         }
 
@@ -100,19 +97,35 @@ fn detect_file_language(
 
 fn run(args: Cli) -> Result<(), String> {
     let Cli {
-        project_path,
+        project_path: provided_path,
         output_filename: output,
         verbose,
+        version,
         no_gitignore,
     } = args;
 
+    if version {
+        println!("{} | version {}", crate_name!(), crate_version!());
+        return Ok(());
+    }
+
+    // Get the project path, using current directory as default
+    let project_path = match provided_path {
+        Some(path) => path
+            .canonicalize()
+            .map_err(|e| format!("Failed to canonicalize path: {e}"))?,
+        None => {
+            std::env::current_dir().map_err(|e| format!("Failed to get current directory: {e}"))?
+        }
+    };
+
     if verbose {
-        println!("Processing path: {project_path:?}");
+        println!("Processing path: {}", project_path.display());
     }
 
     // Detect languages in file/project
     let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
-    let files_to_process = walk_directory(project_path.as_ref(), no_gitignore);
+    let files_to_process = walk_directory(&project_path, no_gitignore);
     detect_project_languages(&files_to_process, &mut language_files);
 
     // Parse files and collect Nodes, indexed by file path
@@ -204,6 +217,13 @@ fn run(args: Cli) -> Result<(), String> {
                 return Err(format!("Unsupported output format: {filename}"));
             }
         }
+    } else {
+        // Default to GUI if no output specified
+        #[cfg(not(test))]
+        {
+            run_gui(graph_nodes);
+        }
+        return Ok(());
     }
 
     Ok(())
@@ -273,9 +293,10 @@ mod tests {
         let non_existent = temp_dir.path().join("non_existent_dir_12345");
 
         let args = Cli {
-            project_path: non_existent.clone(),
+            project_path: Some(non_existent.clone()),
             output_filename: Some("output.txt".to_string()),
             verbose: false,
+            version: false,
             no_gitignore: false,
         };
 
@@ -292,14 +313,14 @@ mod tests {
         File::create(&temp_file).unwrap();
 
         let args = Cli {
-            project_path: temp_file,
+            project_path: Some(temp_file),
             output_filename: None,
             verbose: false,
+            version: false,
             no_gitignore: false,
         };
 
         let result = run(args);
-
         assert!(result.is_ok());
     }
 
@@ -307,15 +328,26 @@ mod tests {
     fn test_existing_directory() {
         let temp_dir = TempDir::new().unwrap();
 
+        // Test with explicit path
         let args = Cli {
-            project_path: temp_dir.path().to_path_buf(),
+            project_path: Some(temp_dir.path().to_path_buf()),
             output_filename: None,
             verbose: false,
+            version: false,
             no_gitignore: false,
         };
-
         let result = run(args);
+        assert!(result.is_ok());
 
+        // Test with default (current) directory
+        let args = Cli {
+            project_path: None,
+            output_filename: None,
+            verbose: false,
+            version: false,
+            no_gitignore: false,
+        };
+        let result = run(args);
         assert!(result.is_ok());
     }
 
@@ -326,9 +358,10 @@ mod tests {
         File::create(&temp_file).unwrap();
 
         let args = Cli {
-            project_path: temp_file,
+            project_path: Some(temp_file),
             output_filename: None,
             verbose: true,
+            version: false,
             no_gitignore: false,
         };
 
