@@ -55,6 +55,7 @@ jobs:
       if: matrix.os != 'windows-latest'
       run: |
         cd target/${{ matrix.target }}/release
+        ls
         tar czvf ../../../${{ matrix.asset_name }}.${{ matrix.archive_ext }} seiri
         cd -
 
