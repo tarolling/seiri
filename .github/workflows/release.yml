@@ -1,10 +1,13 @@
 name: Release
 
 on:
-  push:
-    branches: ["95-*"]
-    # tags:
-      # - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release Tag
+        required: true
+        default: dry-run
+        type: string
 
 env:
   CARGO_TERM_COLOR: always
@@ -70,5 +73,7 @@ jobs:
       with:
         draft: true
         files: ${{ matrix.asset_name }}.${{ matrix.archive_ext }}
+        name: ${{ inputs.tag }}
+        tag_name: ${{ inputs.tag }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
