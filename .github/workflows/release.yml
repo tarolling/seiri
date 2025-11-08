@@ -1,9 +1,13 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release Tag
+        required: true
+        default: dry-run
+        type: string
 
 env:
   CARGO_TERM_COLOR: always
@@ -17,7 +21,7 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            target: x86_64-unknown-linux-musl
+            target: x86_64-unknown-linux-gnu
             archive_ext: tar.gz
             asset_name: seiri-linux-amd64
           - os: macos-latest
@@ -43,11 +47,9 @@ jobs:
       if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt-get update
-        sudo apt-get install -y pkg-config libx11-dev libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev libgl1-mesa-dev ttf-mscorefonts-installer libfontconfig-dev
-
-    - name: Install musl-tools (Linux only)
-      if: contains(matrix.target, 'musl')
-      run: sudo apt-get update && sudo apt-get install -y musl-tools
+        sudo apt-get install -y pkg-config libx11-dev libxcursor-dev libxrandr-dev \
+                                libxinerama-dev libxi-dev libgl1-mesa-dev ttf-mscorefonts-installer \
+                                libfreetype6-dev libfontconfig-dev
 
     - name: Build
       run: cargo build --release --target ${{ matrix.target }}
@@ -56,19 +58,22 @@ jobs:
       if: matrix.os != 'windows-latest'
       run: |
         cd target/${{ matrix.target }}/release
-        tar czvf ../../../${{ matrix.asset_name }}.${{ matrix.archive_ext }} seiri
+        tar czvf ../../../${{ matrix.asset_name }}.${{ matrix.archive_ext }} seiri-cli
         cd -
 
     - name: Package Binary (Windows)
       if: matrix.os == 'windows-latest'
       run: |
         cd target/${{ matrix.target }}/release
-        7z a ../../../${{ matrix.asset_name }}.${{ matrix.archive_ext }} seiri.exe
+        7z a ../../../${{ matrix.asset_name }}.${{ matrix.archive_ext }} seiri-cli.exe
         cd -
 
     - name: Release
       uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
       with:
+        draft: true
         files: ${{ matrix.asset_name }}.${{ matrix.archive_ext }}
+        name: ${{ inputs.tag }}
+        tag_name: ${{ inputs.tag }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
