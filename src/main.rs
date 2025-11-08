@@ -126,7 +126,8 @@ fn run(args: Cli) -> Result<(), String> {
     // Detect languages in file/project
     let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
     let files_to_process = walk_directory(&project_path, no_gitignore);
-    detect_project_languages(&files_to_process, &mut language_files);
+    let detected_languages = detect_project_languages(&files_to_process, &mut language_files)
+        .ok_or_else(|| "No supported language files found in the project".to_string())?;
 
     // Parse files and collect Nodes, indexed by file path
     let mut node_map: HashMap<PathBuf, FileNode> = HashMap::new();
@@ -197,8 +198,12 @@ fn run(args: Cli) -> Result<(), String> {
                 if verbose {
                     println!("Exporting graph to SVG: {filename}");
                 }
-                export::export_graph_as_svg(&graph_nodes, &PathBuf::from(filename))
-                    .map_err(|e| format!("Failed to export SVG: {e}"))?;
+                export::export_graph_as_svg(
+                    &graph_nodes,
+                    &PathBuf::from(filename),
+                    detected_languages,
+                )
+                .map_err(|e| format!("Failed to export SVG: {e}"))?;
                 if verbose {
                     println!("Successfully exported to {filename}");
                 }
@@ -207,8 +212,12 @@ fn run(args: Cli) -> Result<(), String> {
                 if verbose {
                     println!("Exporting graph to PNG: {filename}");
                 }
-                export::export_graph_as_png(&graph_nodes, &PathBuf::from(filename))
-                    .map_err(|e| format!("Failed to export PNG: {e}"))?;
+                export::export_graph_as_png(
+                    &graph_nodes,
+                    &PathBuf::from(filename),
+                    detected_languages,
+                )
+                .map_err(|e| format!("Failed to export PNG: {e}"))?;
                 if verbose {
                     println!("Successfully exported to {filename}");
                 }
@@ -309,7 +318,7 @@ mod tests {
     #[test]
     fn test_existing_file() {
         let temp_dir = TempDir::new().unwrap();
-        let temp_file = temp_dir.path().join("test_file.txt");
+        let temp_file = temp_dir.path().join("test_file.py");
         File::create(&temp_file).unwrap();
 
         let args = Cli {
@@ -337,7 +346,8 @@ mod tests {
             no_gitignore: false,
         };
         let result = run(args);
-        assert!(result.is_ok());
+        // we expect an error since the directory is empty
+        assert!(result.is_err());
 
         // Test with default (current) directory
         let args = Cli {

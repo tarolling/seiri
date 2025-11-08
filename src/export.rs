@@ -2,7 +2,7 @@ use crate::core::defs::{GraphNode, Language};
 use font_kit::family_name::FamilyName;
 use font_kit::source::SystemSource;
 use fontdue::{Font, FontSettings};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -16,7 +16,11 @@ const MIN_NODE_RADIUS: f32 = 20.0;
 const MAX_NODE_RADIUS: f32 = 40.0;
 const MARGIN: f32 = 50.0;
 
-pub fn export_graph_as_svg(graph_nodes: &[GraphNode], output_path: &Path) -> Result<(), String> {
+pub fn export_graph_as_svg(
+    graph_nodes: &[GraphNode],
+    output_path: &Path,
+    detected_languages: HashSet<Language>,
+) -> Result<(), String> {
     if graph_nodes.is_empty() {
         return Ok(());
     }
@@ -136,10 +140,7 @@ pub fn export_graph_as_svg(graph_nodes: &[GraphNode], output_path: &Path) -> Res
     let legend_x = MARGIN;
     let legend_spacing = 25.0;
 
-    for (i, lang) in [Language::Python, Language::Rust, Language::TypeScript]
-        .iter()
-        .enumerate()
-    {
+    for (i, lang) in detected_languages.iter().enumerate() {
         let y = legend_y + (i as f32 * legend_spacing);
 
         // Legend dot
@@ -170,7 +171,11 @@ pub fn export_graph_as_svg(graph_nodes: &[GraphNode], output_path: &Path) -> Res
     Ok(())
 }
 
-pub fn export_graph_as_png(graph_nodes: &[GraphNode], output_path: &Path) -> Result<(), String> {
+pub fn export_graph_as_png(
+    graph_nodes: &[GraphNode],
+    output_path: &Path,
+    detected_languages: HashSet<Language>,
+) -> Result<(), String> {
     if graph_nodes.is_empty() {
         return Ok(());
     }
@@ -320,10 +325,7 @@ pub fn export_graph_as_png(graph_nodes: &[GraphNode], output_path: &Path) -> Res
     let legend_y = MARGIN;
     let legend_spacing = 25.0;
 
-    for (i, lang) in [Language::Python, Language::Rust, Language::TypeScript]
-        .iter()
-        .enumerate()
-    {
+    for (i, lang) in detected_languages.iter().enumerate() {
         let y = legend_y + (i as f32 * legend_spacing);
 
         // Legend dot
