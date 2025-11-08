@@ -126,7 +126,7 @@ fn run(args: Cli) -> Result<(), String> {
     // Detect languages in file/project
     let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
     let files_to_process = walk_directory(&project_path, no_gitignore);
-    detect_project_languages(&files_to_process, &mut language_files);
+    let detected_languages = detect_project_languages(&files_to_process, &mut language_files).expect("supported languages should be present");
 
     // Parse files and collect Nodes, indexed by file path
     let mut node_map: HashMap<PathBuf, FileNode> = HashMap::new();
@@ -197,7 +197,7 @@ fn run(args: Cli) -> Result<(), String> {
                 if verbose {
                     println!("Exporting graph to SVG: {filename}");
                 }
-                export::export_graph_as_svg(&graph_nodes, &PathBuf::from(filename))
+                export::export_graph_as_svg(&graph_nodes, &PathBuf::from(filename), detected_languages)
                     .map_err(|e| format!("Failed to export SVG: {e}"))?;
                 if verbose {
                     println!("Successfully exported to {filename}");
@@ -207,7 +207,7 @@ fn run(args: Cli) -> Result<(), String> {
                 if verbose {
                     println!("Exporting graph to PNG: {filename}");
                 }
-                export::export_graph_as_png(&graph_nodes, &PathBuf::from(filename))
+                export::export_graph_as_png(&graph_nodes, &PathBuf::from(filename), detected_languages)
                     .map_err(|e| format!("Failed to export PNG: {e}"))?;
                 if verbose {
                     println!("Successfully exported to {filename}");
