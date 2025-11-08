@@ -55,15 +55,14 @@ jobs:
       if: matrix.os != 'windows-latest'
       run: |
         cd target/${{ matrix.target }}/release
-        ls
-        tar czvf ../../../${{ matrix.asset_name }}.${{ matrix.archive_ext }} seiri
+        tar czvf ../../../${{ matrix.asset_name }}.${{ matrix.archive_ext }} seiri-cli
         cd -
 
     - name: Package Binary (Windows)
       if: matrix.os == 'windows-latest'
       run: |
         cd target/${{ matrix.target }}/release
-        7z a ../../../${{ matrix.asset_name }}.${{ matrix.archive_ext }} seiri.exe
+        7z a ../../../${{ matrix.asset_name }}.${{ matrix.archive_ext }} seiri-cli.exe
         cd -
 
     - name: Release
