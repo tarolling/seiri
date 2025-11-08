@@ -39,9 +39,7 @@ jobs:
     - name: Install Rust toolchain
       uses: actions-rust-lang/setup-rust-toolchain@fb51252c7ba57d633bc668f941da052e410add48 # v1.13.0
       with:
-        toolchain: stable
         target: ${{ matrix.target }}
-        override: true
 
     - name: Install Linux dependencies
       if: matrix.os == 'ubuntu-latest'
@@ -77,3 +75,24 @@ jobs:
         tag_name: ${{ inputs.tag }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-crate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@fb51252c7ba57d633bc668f941da052e410add48 # v1.13.0
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libx11-dev libxcursor-dev libxrandr-dev \
+                                  libxinerama-dev libxi-dev libgl1-mesa-dev ttf-mscorefonts-installer \
+                                  libfreetype6-dev libfontconfig-dev
+
+      - name: Publish to crates.io
+        run: |
+          cargo publish \
+            --token ${{ secrets.CARGO_REGISTRY_TOKEN }} \
+            ${{ inputs.tag == 'dry-run' && '--dry-run' }}
