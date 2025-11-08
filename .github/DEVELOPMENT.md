@@ -40,9 +40,11 @@ To create a new release:
    git push origin v1.0.0
    ```
 
-5. The GitHub Actions workflow will automatically:
+5. Run the GitHub Actions workflow with the appropriate tag as input (e.g., v1.0.0). The workflow will:
    - Create a new release
    - Build binaries for Linux, macOS, and Windows
    - Upload the binaries to the release
 
 You can find the releases at: <https://github.com/tarolling/seiri/releases>
+
+If you want to test a release, pass in `dry-run` as the tag.
