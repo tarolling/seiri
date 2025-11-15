@@ -124,7 +124,8 @@ jobs:
         shell: bash
         run: |
           ARCHIVE_FILE=seiri-${PLATFORM_TARGET}.zip
-          7z a $ARCHIVE_FILE ./target/${PLATFORM_TARGET}/release/seiri-cli.exe
+          cp ./target/${PLATFORM_TARGET}/release/seiri-cli.exe ./seiri.exe
+          7z a $ARCHIVE_FILE ./seiri.exe
           sha256sum $ARCHIVE_FILE > $ARCHIVE_FILE.sha256
         env:
           PLATFORM_TARGET: ${{ matrix.platform.target }}
