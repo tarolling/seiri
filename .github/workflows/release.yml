@@ -9,6 +9,10 @@ on:
         default: dry-run
         type: string
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -212,7 +216,7 @@ jobs:
 
       - name: Install Linux dependencies
         run: |
-          apt update -y && apt-get install -y libssl-dev openssl pkg-config libx11-dev \
+          sudo apt update -y && apt-get install -y libssl-dev openssl pkg-config libx11-dev \
                                   libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev \
                                   libgl1-mesa-dev ttf-mscorefonts-installer \
                                   libfreetype6-dev libfontconfig-dev
