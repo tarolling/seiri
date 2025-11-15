@@ -16,6 +16,9 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
 
+permissions:
+  contents: write
+
 jobs:
   macos-x86_64:
     runs-on: macos-14
