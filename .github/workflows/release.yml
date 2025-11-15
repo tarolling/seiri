@@ -97,7 +97,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         
   windows:
-    runs-on: github-windows-2022-x86_64-8
+    runs-on: windows-2022
     strategy:
       matrix:
         platform:
@@ -141,7 +141,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   linux:
-    runs-on: depot-ubuntu-latest-4
+    runs-on: ubuntu-22.04
     strategy:
       matrix:
         include:
