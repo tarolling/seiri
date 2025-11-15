@@ -118,6 +118,7 @@ jobs:
         run: cargo build --release --locked --target ${{ matrix.platform.target }}
       
       - name: Package binary
+        shell: bash
         run: |
           ARCHIVE_FILE=seiri-${PLATFORM_TARGET}.zip
           7z a $ARCHIVE_FILE ./target/${PLATFORM_TARGET}/release/seiri-cli.exe
