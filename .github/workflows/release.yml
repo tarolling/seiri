@@ -9,86 +9,220 @@ on:
         default: dry-run
         type: string
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
 
+permissions:
+  contents: write
+
 jobs:
-  build-release:
-    runs-on: ${{ matrix.os }}
-    permissions:
-      contents: write
+  macos-x86_64:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@fb51252c7ba57d633bc668f941da052e410add48 # v1.13.0
+        with:
+          target: x86_64-apple-darwin
+
+      - name: Build
+        run: cargo build --release --locked --target x86_64-apple-darwin
+
+      - name: Package binary
+        run: |
+          TARGET=x86_64-apple-darwin
+          ARCHIVE_NAME=seiri-$TARGET
+          ARCHIVE_FILE=$ARCHIVE_NAME.tar.gz
+
+          mkdir -p $ARCHIVE_NAME
+          cp target/$TARGET/release/seiri-cli $ARCHIVE_NAME/seiri
+          tar czvf $ARCHIVE_FILE $ARCHIVE_NAME
+          shasum -a 256 $ARCHIVE_FILE > $ARCHIVE_FILE.sha256
+
+      - name: Release
+        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
+        with:
+          draft: ${{ inputs.tag == 'dry-run' && true || false }}
+          files: |
+            *.tar.gz
+            *.sha256
+          name: ${{ inputs.tag }}
+          tag_name: ${{ inputs.tag }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  macos-aarch64:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@fb51252c7ba57d633bc668f941da052e410add48 # v1.13.0
+        with:
+          target: aarch64-apple-darwin
+
+      - name: Build
+        run: cargo build --release --locked --target aarch64-apple-darwin
+
+      - name: Package binary
+        run: |
+          TARGET=aarch64-apple-darwin
+          ARCHIVE_NAME=seiri-$TARGET
+          ARCHIVE_FILE=$ARCHIVE_NAME.tar.gz
+
+          mkdir -p $ARCHIVE_NAME
+          cp target/$TARGET/release/seiri-cli $ARCHIVE_NAME/seiri
+          tar czvf $ARCHIVE_FILE $ARCHIVE_NAME
+          shasum -a 256 $ARCHIVE_FILE > $ARCHIVE_FILE.sha256
+
+      - name: Release
+        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
+        with:
+          draft: ${{ inputs.tag == 'dry-run' && true || false }}
+          files: |
+            *.tar.gz
+            *.sha256
+          name: ${{ inputs.tag }}
+          tag_name: ${{ inputs.tag }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+  windows:
+    runs-on: windows-2022
+    strategy:
+      matrix:
+        platform:
+          - target: x86_64-pc-windows-msvc
+            arch: x64
+          - target: i686-pc-windows-msvc
+            arch: x86
+          - target: aarch64-pc-windows-msvc
+            arch: x64 # not relevant here
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@fb51252c7ba57d633bc668f941da052e410add48 # v1.13.0
+        with:
+          target: ${{ matrix.platform.target }}
+
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.platform.target }}
+      
+      - name: Package binary
+        shell: bash
+        run: |
+          ARCHIVE_FILE=seiri-${PLATFORM_TARGET}.zip
+          cp ./target/${PLATFORM_TARGET}/release/seiri-cli.exe ./seiri.exe
+          7z a $ARCHIVE_FILE ./seiri.exe
+          sha256sum $ARCHIVE_FILE > $ARCHIVE_FILE.sha256
+        env:
+          PLATFORM_TARGET: ${{ matrix.platform.target }}
+
+      - name: Release
+        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
+        with:
+          draft: ${{ inputs.tag == 'dry-run' && true || false }}
+          files: |
+            *.zip
+            *.sha256
+          name: ${{ inputs.tag }}
+          tag_name: ${{ inputs.tag }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  linux:
+    runs-on: ubuntu-22.04
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            archive_ext: tar.gz
-            asset_name: seiri-linux-amd64
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            archive_ext: tar.gz
-            asset_name: seiri-macos-amd64
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            archive_ext: zip
-            asset_name: seiri-windows-amd64
-
+          - { target: "x86_64-unknown-linux-gnu", cc: "gcc" }
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
-    - name: Install Rust toolchain
-      uses: actions-rust-lang/setup-rust-toolchain@fb51252c7ba57d633bc668f941da052e410add48 # v1.13.0
-      with:
-        target: ${{ matrix.target }}
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@fb51252c7ba57d633bc668f941da052e410add48 # v1.13.0
+        with:
+          target: ${{ matrix.target }}
 
-    - name: Install Linux dependencies
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y pkg-config libx11-dev libxcursor-dev libxrandr-dev \
+      - name: Install dependencies
+        run: |
+          # Install the 32-bit cross target on 64-bit (noop if we're already on 64-bit)
+          rustup target add ${{ matrix.target }}
+          # If we're running on rhel centos, install needed packages.
+          if command -v yum &> /dev/null; then
+              yum update -y && yum install -y perl-core openssl openssl-devel pkgconfig libatomic
+
+              # If we're running on i686 we need to symlink libatomic
+              # in order to build openssl with -latomic flag.
+              if [[ ! -d "/usr/lib64" ]]; then
+                  ln -s /usr/lib/libatomic.so.1 /usr/lib/libatomic.so
+              else
+                  # Support cross-compiling from 64-bit to 32-bit
+                  yum install -y glibc-devel.i686 libstdc++-devel.i686
+              fi
+          else
+              # If we're running on debian-based system.
+              sudo apt update -y && sudo apt-get install -y libssl-dev openssl pkg-config libx11-dev libxcursor-dev libxrandr-dev \
                                 libxinerama-dev libxi-dev libgl1-mesa-dev ttf-mscorefonts-installer \
                                 libfreetype6-dev libfontconfig-dev
+          fi
+        env:
+          CC: ${{ matrix.cc }}
 
-    - name: Build
-      run: cargo build --release --target ${{ matrix.target }}
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
 
-    - name: Package Binary (Unix)
-      if: matrix.os != 'windows-latest'
-      run: |
-        cd target/${{ matrix.target }}/release
-        tar czvf ../../../${{ matrix.asset_name }}.${{ matrix.archive_ext }} seiri-cli
-        cd -
+      - name: Package binary
+        run: |
+          ARCHIVE_NAME=seiri-$TARGET
+          ARCHIVE_FILE=$ARCHIVE_NAME.tar.gz
 
-    - name: Package Binary (Windows)
-      if: matrix.os == 'windows-latest'
-      run: |
-        cd target/${{ matrix.target }}/release
-        7z a ../../../${{ matrix.asset_name }}.${{ matrix.archive_ext }} seiri-cli.exe
-        cd -
+          mkdir -p $ARCHIVE_NAME
+          cp target/$TARGET/release/seiri-cli $ARCHIVE_NAME/seiri
+          tar czvf $ARCHIVE_FILE $ARCHIVE_NAME
+          shasum -a 256 $ARCHIVE_FILE > $ARCHIVE_FILE.sha256
+        env:
+          TARGET: ${{ matrix.target }}
 
-    - name: Release
-      uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
-      with:
-        draft: ${{ inputs.tag == 'dry-run' && true || false }}
-        files: ${{ matrix.asset_name }}.${{ matrix.archive_ext }}
-        name: ${{ inputs.tag }}
-        tag_name: ${{ inputs.tag }}
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Release
+        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
+        with:
+          draft: ${{ inputs.tag == 'dry-run' && true || false }}
+          files: |
+            *.tar.gz
+            *.sha256
+          name: ${{ inputs.tag }}
+          tag_name: ${{ inputs.tag }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   publish-crate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Install Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@fb51252c7ba57d633bc668f941da052e410add48 # v1.13.0
 
       - name: Install Linux dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y pkg-config libx11-dev libxcursor-dev libxrandr-dev \
-                                  libxinerama-dev libxi-dev libgl1-mesa-dev ttf-mscorefonts-installer \
+          sudo apt update -y && sudo apt-get install -y libssl-dev openssl pkg-config libx11-dev \
+                                  libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev \
+                                  libgl1-mesa-dev ttf-mscorefonts-installer \
                                   libfreetype6-dev libfontconfig-dev
 
       - name: Publish to crates.io
