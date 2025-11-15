@@ -30,7 +30,7 @@ jobs:
           target: x86_64-apple-darwin
 
       - name: Build
-        run: cargo build --release --locked
+        run: cargo build --release --locked --target x86_64-apple-darwin
 
       - name: Package binary
         run: |
@@ -68,7 +68,7 @@ jobs:
           target: aarch64-apple-darwin
 
       - name: Build
-        run: cargo build --release --locked
+        run: cargo build --release --locked --target aarch64-apple-darwin
 
       - name: Debug
         run: ls target
@@ -118,7 +118,7 @@ jobs:
           target: ${{ matrix.platform.target }}
 
       - name: Build
-        run: cargo build --release --locked
+        run: cargo build --release --locked --target ${{ matrix.platform.target }}
       
       - name: Package binary
         run: |
@@ -183,7 +183,7 @@ jobs:
           CC: ${{ matrix.cc }}
 
       - name: Build
-        run: cargo build --release --locked
+        run: cargo build --release --locked --target ${{ matrix.target }}
 
       - name: Package binary
         run: |
