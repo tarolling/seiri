@@ -70,6 +70,9 @@ jobs:
       - name: Build
         run: cargo build --release --locked
 
+      - name: Debug
+        run: ls
+
       - name: Package binary
         run: |
           TARGET=aarch64-apple-darwin
