@@ -71,7 +71,7 @@ jobs:
         run: cargo build --release --locked
 
       - name: Debug
-        run: ls
+        run: ls target
 
       - name: Package binary
         run: |
@@ -175,7 +175,7 @@ jobs:
               fi
           else
               # If we're running on debian-based system.
-              apt update -y && apt-get install -y libssl-dev openssl pkg-config libx11-dev libxcursor-dev libxrandr-dev \
+              sudo apt update -y && sudo apt-get install -y libssl-dev openssl pkg-config libx11-dev libxcursor-dev libxrandr-dev \
                                 libxinerama-dev libxi-dev libgl1-mesa-dev ttf-mscorefonts-installer \
                                 libfreetype6-dev libfontconfig-dev
           fi
@@ -219,7 +219,7 @@ jobs:
 
       - name: Install Linux dependencies
         run: |
-          sudo apt update -y && apt-get install -y libssl-dev openssl pkg-config libx11-dev \
+          sudo apt update -y && sudo apt-get install -y libssl-dev openssl pkg-config libx11-dev \
                                   libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev \
                                   libgl1-mesa-dev ttf-mscorefonts-installer \
                                   libfreetype6-dev libfontconfig-dev
