@@ -1,10 +1,12 @@
 use crate::core::defs::{FileNode, GraphNode, Language};
+use crate::core::resolvers::cpp::CppResolver;
 use crate::core::resolvers::python::PythonResolver;
 use crate::core::resolvers::rust::RustResolver;
 use crate::core::resolvers::typescript::TypeScriptResolver;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+pub mod cpp;
 pub mod python;
 pub mod rust;
 pub mod typescript;
@@ -36,6 +38,7 @@ impl GraphBuilder {
         resolvers.insert(Language::Python, Box::new(PythonResolver::new()));
         resolvers.insert(Language::Rust, Box::new(RustResolver::new()));
         resolvers.insert(Language::TypeScript, Box::new(TypeScriptResolver::new()));
+        resolvers.insert(Language::Cpp, Box::new(CppResolver::new()));
         Self { resolvers }
     }
 

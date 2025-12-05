@@ -12,7 +12,8 @@ use core::defs::{FileNode, Language};
 use core::resolvers::GraphBuilder;
 use ignore::WalkBuilder;
 use parsers::{
-    python::parse_python_file, rust::parse_rust_file, typescript::parse_typescript_file,
+    cpp::parse_cpp_file, python::parse_python_file, rust::parse_rust_file,
+    typescript::parse_typescript_file,
 };
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -153,6 +154,14 @@ fn run(args: Cli) -> Result<(), String> {
                 if let Some(node) = parse_typescript_file(file_path) {
                     if verbose {
                         println!("Parsed TypeScript file: {}", file_path.display());
+                    }
+                    node_map.insert(file_path.clone(), node);
+                }
+            }
+            Language::Cpp => {
+                if let Some(node) = parse_cpp_file(file_path) {
+                    if verbose {
+                        println!("Parsed C++ file: {}", file_path.display());
                     }
                     node_map.insert(file_path.clone(), node);
                 }
