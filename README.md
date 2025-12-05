@@ -67,6 +67,7 @@ seiri <path> [gui|<export_path>] [-v|--verbose]
 * Rust
 * Python
 * TypeScript
+* C++
 
 ## Contributing
 
