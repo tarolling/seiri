@@ -107,6 +107,76 @@ fn extract_include_path(node: tree_sitter::Node, code: &str) -> Option<(String, 
     None
 }
 
+/// Check if a node is inside a conditional compilation block
+/// Returns true if the node is within #ifdef, #ifndef, or #if directives
+#[allow(dead_code)]
+fn is_in_conditional_block(node: tree_sitter::Node) -> bool {
+    let mut current = Some(node);
+    while let Some(n) = current {
+        if matches!(n.kind(), "preproc_ifdef" | "preproc_ifndef" | "preproc_if") {
+            return true;
+        }
+        current = n.parent();
+    }
+    false
+}
+
+/// Extract conditional directive condition (e.g., "DEBUG" from "#ifdef DEBUG")
+#[allow(dead_code)]
+fn extract_conditional_condition(node: tree_sitter::Node, code: &str) -> Option<String> {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "identifier" {
+            return Some(get_text(child, code));
+        }
+    }
+    None
+}
+
+/// Common patterns for macro-wrapped includes
+/// Examples: BOOST_INCLUDE("file.h"), Q_INCLUDE("widget.h")
+const MACRO_INCLUDE_PATTERNS: &[&str] = &[
+    "BOOST_INCLUDE",
+    "Q_INCLUDE",
+    "QT_INCLUDE",
+    "GL_INCLUDE",
+    "SDL_INCLUDE",
+    "INCLUDE",
+    "SYSTEM_INCLUDE",
+    "OPTIONAL_INCLUDE",
+];
+
+/// Extract includes from common macro patterns
+#[allow(dead_code)]
+fn extract_macro_includes(code: &str) -> HashSet<Import> {
+    let mut includes = HashSet::new();
+    
+    // Look for patterns like PATTERN("file.h") or PATTERN(<file.h>)
+    for line in code.lines() {
+        for pattern in MACRO_INCLUDE_PATTERNS {
+            if line.contains(pattern) && line.contains('(') {
+                // Extract quoted path
+                if let Some(first_quote) = line.find('"') {
+                    if let Some(second_quote) = line[first_quote + 1..].find('"') {
+                        let path = &line[first_quote + 1..first_quote + 1 + second_quote];
+                        includes.insert(Import::new(path.to_string(), true));
+                    }
+                }
+                // Extract angle bracket path
+                if let Some(open_bracket) = line.find('<') {
+                    if let Some(close_bracket) = line[open_bracket + 1..].find('>') {
+                        let path = &line[open_bracket + 1..open_bracket + 1 + close_bracket];
+                        includes.insert(Import::new(path.to_string(), false));
+                    }
+                }
+            }
+        }
+    }
+    
+    includes
+}
+
+
 pub fn parse_cpp_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
     let code = fs::read_to_string(&path).ok()?;
     let loc = code.matches('\n').count() as u32 + 1;
@@ -234,4 +304,108 @@ void hello_world() {
         let result = parse_cpp_file(temp_file.path()).expect("Failed to parse");
         assert_eq!(result.imports().len(), 1);
     }
+
+    #[test]
+    fn test_extract_includes_in_ifdef() {
+        let content = r#"
+#ifdef DEBUG
+#include "debug.h"
+#endif
+
+#include "normal.h"
+"#;
+        let temp_file = create_test_file(content);
+        let result = parse_cpp_file(temp_file.path()).expect("Failed to parse");
+        // Should extract both includes regardless of conditional
+        assert_eq!(result.imports().len(), 2);
+    }
+
+    #[test]
+    fn test_extract_includes_in_ifndef() {
+        let content = r#"
+#ifndef NDEBUG
+#include "debug_helper.h"
+#endif
+
+#include "main.h"
+"#;
+        let temp_file = create_test_file(content);
+        let result = parse_cpp_file(temp_file.path()).expect("Failed to parse");
+        // Should extract both includes
+        assert_eq!(result.imports().len(), 2);
+    }
+
+    #[test]
+    fn test_extract_includes_in_if_defined() {
+        let content = r#"
+#if defined(FEATURE_X)
+#include "feature_x.h"
+#endif
+
+#if defined(FEATURE_Y)
+#include "feature_y.h"
+#else
+#include "feature_y_fallback.h"
+#endif
+"#;
+        let temp_file = create_test_file(content);
+        let result = parse_cpp_file(temp_file.path()).expect("Failed to parse");
+        // Should extract all includes from all branches
+        assert!(result.imports().len() >= 3);
+    }
+
+    #[test]
+    fn test_nested_conditional_includes() {
+        let content = r#"
+#ifdef WINDOWS
+#ifdef UNICODE
+#include "wide_string.h"
+#endif
+#include "windows.h"
+#endif
+"#;
+        let temp_file = create_test_file(content);
+        let result = parse_cpp_file(temp_file.path()).expect("Failed to parse");
+        // Should extract nested includes
+        assert_eq!(result.imports().len(), 2);
+    }
+
+    #[test]
+    fn test_extract_macro_includes_basic() {
+        let code = r#"
+BOOST_INCLUDE("utility.hpp")
+Q_INCLUDE("widget.h")
+SYSTEM_INCLUDE(<vector>)
+"#;
+        let includes = extract_macro_includes(code);
+        assert!(includes.len() >= 2); // At least the documented patterns
+    }
+
+    #[test]
+    fn test_extract_macro_includes_quoted() {
+        let code = r#"
+BOOST_INCLUDE("filesystem.hpp")
+"#;
+        let includes = extract_macro_includes(code);
+        assert!(!includes.is_empty());
+    }
+
+    #[test]
+    fn test_extract_macro_includes_angle() {
+        let code = r#"
+SYSTEM_INCLUDE(<iostream>)
+GL_INCLUDE(<gl.h>)
+"#;
+        let includes = extract_macro_includes(code);
+        assert!(!includes.is_empty());
+    }
+
+    #[test]
+    fn test_macro_includes_empty() {
+        let code = "no macros here";
+        let includes = extract_macro_includes(code);
+        // Should not panic and return empty set for non-matching patterns
+        assert!(includes.is_empty() || includes.len() == 0);
+    }
 }
+
