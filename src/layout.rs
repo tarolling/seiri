@@ -1,5 +1,5 @@
-mod circular;
-mod sugiyama;
+pub mod circular;
+pub mod sugiyama;
 
 use circular::{CircularConfig, CircularLayout};
 use petgraph::graph::{Graph, NodeIndex};

@@ -8,6 +8,7 @@ pub enum Language {
     Python,
     Rust,
     TypeScript,
+    Cpp,
 }
 
 impl Language {
@@ -17,6 +18,7 @@ impl Language {
             Language::Python => &["py"],
             Language::Rust => &["rs"],
             Language::TypeScript => &["ts"],
+            Language::Cpp => &["cpp", "cc", "cxx", "c++", "h", "hpp", "hxx", "h++"],
         }
     }
 
@@ -24,7 +26,12 @@ impl Language {
     pub fn from_file(filename: &str) -> Option<Self> {
         static EXTENSION_MAP: Lazy<HashMap<&'static str, Language>> = Lazy::new(|| {
             let mut map = HashMap::new();
-            for lang in &[Language::Python, Language::Rust, Language::TypeScript] {
+            for lang in &[
+                Language::Python,
+                Language::Rust,
+                Language::TypeScript,
+                Language::Cpp,
+            ] {
                 for extension in lang.extensions() {
                     map.insert(*extension, *lang);
                 }
@@ -42,6 +49,7 @@ impl Language {
             Language::Python => "Python",
             Language::Rust => "Rust",
             Language::TypeScript => "TypeScript",
+            Language::Cpp => "C++",
         }
     }
 
@@ -51,6 +59,7 @@ impl Language {
             Language::Python => "#FFD43B",
             Language::Rust => "#DEA584",
             Language::TypeScript => "#007ACC",
+            Language::Cpp => "#00599C",
         }
     }
 
@@ -64,6 +73,7 @@ impl Language {
             Language::TypeScript => {
                 Color::from_rgba(0.0, 122.0 / 255.0, 204.0 / 255.0, 1.0).unwrap()
             }
+            Language::Cpp => Color::from_rgba(0.0, 89.0 / 255.0, 156.0 / 255.0, 1.0).unwrap(),
         }
     }
 }

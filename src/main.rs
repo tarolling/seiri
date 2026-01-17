@@ -12,7 +12,8 @@ use core::defs::{FileNode, Language};
 use core::resolvers::GraphBuilder;
 use ignore::WalkBuilder;
 use parsers::{
-    python::parse_python_file, rust::parse_rust_file, typescript::parse_typescript_file,
+    cpp::parse_cpp_file, python::parse_python_file, rust::parse_rust_file,
+    typescript::parse_typescript_file,
 };
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -157,6 +158,14 @@ fn run(args: Cli) -> Result<(), String> {
                     node_map.insert(file_path.clone(), node);
                 }
             }
+            Language::Cpp => {
+                if let Some(node) = parse_cpp_file(file_path) {
+                    if verbose {
+                        println!("Parsed C++ file: {}", file_path.display());
+                    }
+                    node_map.insert(file_path.clone(), node);
+                }
+            }
         }
     }
 
@@ -292,6 +301,7 @@ fn walk_directory(path: &Path, no_gitignore: bool) -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::layout::Layout;
     use std::fs;
     use std::{fs::File, path::Path};
     use tempfile::TempDir;
@@ -451,5 +461,227 @@ mod tests {
 
         let files = walk_directory(dir.path(), true);
         assert!(files.iter().any(|p| p.ends_with("ignored.txt")));
+    }
+
+    /// Test T019: Verify C++ nodes work with layout algorithms
+    /// Creates a simple C++ project and tests both Sugiyama and Circular layouts
+    #[test]
+    fn test_cpp_layout_sugiyama_and_circular() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create a simple C++ project with dependencies
+        // header.h
+        let header_path = temp_dir.path().join("header.h");
+        File::create(&header_path).unwrap();
+        fs::write(
+            &header_path,
+            "#ifndef HEADER_H\n#define HEADER_H\nvoid foo();\n#endif\n",
+        )
+        .unwrap();
+
+        // math.h
+        let math_header_path = temp_dir.path().join("math.h");
+        File::create(&math_header_path).unwrap();
+        fs::write(
+            &math_header_path,
+            "#ifndef MATH_H\n#define MATH_H\nint add(int a, int b);\n#endif\n",
+        )
+        .unwrap();
+
+        // main.cpp depends on header.h and math.h
+        let main_path = temp_dir.path().join("main.cpp");
+        File::create(&main_path).unwrap();
+        fs::write(
+            &main_path,
+            "#include \"header.h\"\n#include \"math.h\"\n\nint main() { foo(); return 0; }\n",
+        )
+        .unwrap();
+
+        // util.cpp depends on header.h
+        let util_path = temp_dir.path().join("util.cpp");
+        File::create(&util_path).unwrap();
+        fs::write(&util_path, "#include \"header.h\"\n\nvoid helper() {}\n").unwrap();
+
+        // Parse all C++ files
+        let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
+        let files_to_process = walk_directory(temp_dir.path(), true);
+        detect_project_languages(&files_to_process, &mut language_files);
+
+        // Only process C++ files
+        let cpp_files: Vec<_> = language_files
+            .iter()
+            .filter(|(_, lang)| **lang == Language::Cpp)
+            .collect();
+        assert!(
+            cpp_files.len() >= 3,
+            "Should have at least 3 C++ files, got {}",
+            cpp_files.len()
+        );
+
+        // Parse files
+        let mut node_map: HashMap<PathBuf, FileNode> = HashMap::new();
+        for (file_path, _) in &cpp_files {
+            if let Some(node) = parse_cpp_file(file_path) {
+                node_map.insert((*file_path).clone(), node);
+            }
+        }
+
+        assert!(!node_map.is_empty(), "Should have parsed C++ files");
+
+        // Build graph
+        let mut graph_builder = GraphBuilder::new();
+        let graph_nodes = graph_builder.build_graph_edges(&node_map, temp_dir.path());
+        assert!(
+            !graph_nodes.is_empty(),
+            "Graph should have nodes after building edges"
+        );
+
+        // Test that layout functions don't panic with C++ graphs
+        let sugiyama_layout =
+            layout::sugiyama::SugiyamaLayout::new(layout::sugiyama::SugiyamaConfig::default());
+        let circular_layout =
+            layout::circular::CircularLayout::new(layout::circular::CircularConfig::default());
+
+        // Create a simple graph to test layout
+        let mut graph = petgraph::graph::Graph::new();
+        for _ in 0..graph_nodes.len() {
+            graph.add_node(());
+        }
+        // Add some edges based on graph_nodes
+        for node in &graph_nodes {
+            for _ in node.edges() {
+                if graph.node_count() > 1 {
+                    let n1 = petgraph::graph::NodeIndex::new(0);
+                    let n2 = petgraph::graph::NodeIndex::new(
+                        (1 % graph.node_count()).min(graph.node_count() - 1),
+                    );
+                    if !graph.contains_edge(n1, n2) {
+                        graph.add_edge(n1, n2, ());
+                    }
+                }
+            }
+        }
+
+        // Test Sugiyama layout
+        let positions_sugiyama = sugiyama_layout.layout(&graph);
+        assert!(
+            !positions_sugiyama.is_empty(),
+            "Sugiyama layout should produce positions"
+        );
+
+        // Test Circular layout
+        let positions_circular = circular_layout.layout(&graph);
+        assert!(
+            !positions_circular.is_empty(),
+            "Circular layout should produce positions"
+        );
+
+        // Verify positions have valid coordinates
+        for (_node_idx, (x, y)) in positions_sugiyama.iter() {
+            assert!(
+                x.is_finite() && y.is_finite(),
+                "Sugiyama layout position should have finite coordinates: ({}, {})",
+                x,
+                y
+            );
+        }
+
+        for (_node_idx, (x, y)) in positions_circular.iter() {
+            assert!(
+                x.is_finite() && y.is_finite(),
+                "Circular layout position should have finite coordinates: ({}, {})",
+                x,
+                y
+            );
+        }
+    }
+
+    /// Test T020: Verify C++ Export (SVG and PNG)
+    /// Tests that C++ graphs export correctly to SVG and PNG formats
+    #[test]
+    fn test_cpp_export_svg_and_png() {
+        let temp_dir = TempDir::new().unwrap();
+        let output_svg = temp_dir.path().join("test_output.svg");
+        let output_png = temp_dir.path().join("test_output.png");
+
+        // Create a simple C++ project with dependencies
+        let header_path = temp_dir.path().join("base.h");
+        File::create(&header_path).unwrap();
+        fs::write(
+            &header_path,
+            "#ifndef BASE_H\n#define BASE_H\nvoid setup();\n#endif\n",
+        )
+        .unwrap();
+
+        let util_path = temp_dir.path().join("util.cpp");
+        File::create(&util_path).unwrap();
+        fs::write(&util_path, "#include \"base.h\"\n\nvoid util_func() {}\n").unwrap();
+
+        let main_path = temp_dir.path().join("main.cpp");
+        File::create(&main_path).unwrap();
+        fs::write(
+            &main_path,
+            "#include \"base.h\"\n#include \"util.cpp\"\n\nint main() { setup(); return 0; }\n",
+        )
+        .unwrap();
+
+        // Parse files
+        let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
+        let files_to_process = walk_directory(temp_dir.path(), true);
+        let detected_languages = detect_project_languages(&files_to_process, &mut language_files)
+            .expect("Should detect languages");
+
+        let mut node_map: HashMap<PathBuf, FileNode> = HashMap::new();
+        for (file_path, lang) in &language_files {
+            match lang {
+                Language::Cpp => {
+                    if let Some(node) = parse_cpp_file(file_path) {
+                        node_map.insert(file_path.clone(), node);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        assert!(!node_map.is_empty(), "Should have parsed C++ files");
+
+        // Build graph
+        let mut graph_builder = GraphBuilder::new();
+        let graph_nodes = graph_builder.build_graph_edges(&node_map, temp_dir.path());
+        assert!(
+            !graph_nodes.is_empty(),
+            "Graph should have nodes after building edges"
+        );
+
+        // Test SVG export
+        let svg_result =
+            export::export_graph_as_svg(&graph_nodes, &output_svg, detected_languages.clone());
+        assert!(
+            svg_result.is_ok(),
+            "SVG export should succeed, got: {:?}",
+            svg_result
+        );
+        assert!(output_svg.exists(), "SVG output file should be created");
+
+        // Verify SVG content
+        let svg_content = fs::read_to_string(&output_svg).expect("Should read SVG file");
+        assert!(svg_content.contains("<svg"), "SVG should contain svg tag");
+        assert!(svg_content.len() > 100, "SVG content should be substantial");
+
+        // Test PNG export
+        let png_result = export::export_graph_as_png(&graph_nodes, &output_png, detected_languages);
+        assert!(
+            png_result.is_ok(),
+            "PNG export should succeed, got: {:?}",
+            png_result
+        );
+        assert!(output_png.exists(), "PNG output file should be created");
+
+        // Verify PNG file has content
+        let png_metadata = fs::metadata(&output_png).expect("Should read PNG metadata");
+        assert!(
+            png_metadata.len() > 100,
+            "PNG file should have substantial size"
+        );
     }
 }

@@ -637,7 +637,7 @@ impl eframe::App for SeiriGraph {
                     ui.group(|ui| {
                         ui.strong("File Information");
                         ui.label(format!("📁 {}", node.file().display()));
-                        ui.label(format!("🔧 {:?}", node.language()));
+                        ui.label(format!("🔧 {}", node.language().to_string()));
                         ui.label(format!("📊 {} lines", node.loc()));
 
                         // Add betweenness centrality score if available
