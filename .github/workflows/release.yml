@@ -225,8 +225,15 @@ jobs:
                                   libgl1-mesa-dev ttf-mscorefonts-installer \
                                   libfreetype6-dev libfontconfig-dev
 
-      - name: Publish to crates.io
+      - name: Publish to crates.io (dry run)
+        if: inputs.tag == 'dry-run'
         run: |
           cargo publish \
             --token ${{ secrets.CARGO_REGISTRY_TOKEN }} \
-            ${{ inputs.tag == 'dry-run' && '--dry-run' }}
+            --dry-run
+
+      - name: Publish to crates.io
+        if: inputs.tag != 'dry-run'
+        run: |
+          cargo publish \
+            --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
