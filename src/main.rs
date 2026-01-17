@@ -301,10 +301,10 @@ fn walk_directory(path: &Path, no_gitignore: bool) -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::layout::Layout;
     use std::fs;
     use std::{fs::File, path::Path};
     use tempfile::TempDir;
-    use crate::layout::Layout;
 
     #[test]
     fn test_non_existent_path() {
@@ -473,8 +473,11 @@ mod tests {
         // header.h
         let header_path = temp_dir.path().join("header.h");
         File::create(&header_path).unwrap();
-        fs::write(&header_path, "#ifndef HEADER_H\n#define HEADER_H\nvoid foo();\n#endif\n")
-            .unwrap();
+        fs::write(
+            &header_path,
+            "#ifndef HEADER_H\n#define HEADER_H\nvoid foo();\n#endif\n",
+        )
+        .unwrap();
 
         // math.h
         let math_header_path = temp_dir.path().join("math.h");
@@ -534,12 +537,10 @@ mod tests {
         );
 
         // Test that layout functions don't panic with C++ graphs
-        let sugiyama_layout = layout::sugiyama::SugiyamaLayout::new(
-            layout::sugiyama::SugiyamaConfig::default(),
-        );
-        let circular_layout = layout::circular::CircularLayout::new(
-            layout::circular::CircularConfig::default(),
-        );
+        let sugiyama_layout =
+            layout::sugiyama::SugiyamaLayout::new(layout::sugiyama::SugiyamaConfig::default());
+        let circular_layout =
+            layout::circular::CircularLayout::new(layout::circular::CircularConfig::default());
 
         // Create a simple graph to test layout
         let mut graph = petgraph::graph::Graph::new();
@@ -606,15 +607,15 @@ mod tests {
         // Create a simple C++ project with dependencies
         let header_path = temp_dir.path().join("base.h");
         File::create(&header_path).unwrap();
-        fs::write(&header_path, "#ifndef BASE_H\n#define BASE_H\nvoid setup();\n#endif\n").unwrap();
+        fs::write(
+            &header_path,
+            "#ifndef BASE_H\n#define BASE_H\nvoid setup();\n#endif\n",
+        )
+        .unwrap();
 
         let util_path = temp_dir.path().join("util.cpp");
         File::create(&util_path).unwrap();
-        fs::write(
-            &util_path,
-            "#include \"base.h\"\n\nvoid util_func() {}\n",
-        )
-        .unwrap();
+        fs::write(&util_path, "#include \"base.h\"\n\nvoid util_func() {}\n").unwrap();
 
         let main_path = temp_dir.path().join("main.cpp");
         File::create(&main_path).unwrap();
@@ -627,9 +628,8 @@ mod tests {
         // Parse files
         let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
         let files_to_process = walk_directory(temp_dir.path(), true);
-        let detected_languages =
-            detect_project_languages(&files_to_process, &mut language_files)
-                .expect("Should detect languages");
+        let detected_languages = detect_project_languages(&files_to_process, &mut language_files)
+            .expect("Should detect languages");
 
         let mut node_map: HashMap<PathBuf, FileNode> = HashMap::new();
         for (file_path, lang) in &language_files {
@@ -654,24 +654,19 @@ mod tests {
         );
 
         // Test SVG export
-        let svg_result = export::export_graph_as_svg(&graph_nodes, &output_svg, detected_languages.clone());
+        let svg_result =
+            export::export_graph_as_svg(&graph_nodes, &output_svg, detected_languages.clone());
         assert!(
             svg_result.is_ok(),
             "SVG export should succeed, got: {:?}",
             svg_result
         );
-        assert!(
-            output_svg.exists(),
-            "SVG output file should be created"
-        );
+        assert!(output_svg.exists(), "SVG output file should be created");
 
         // Verify SVG content
         let svg_content = fs::read_to_string(&output_svg).expect("Should read SVG file");
         assert!(svg_content.contains("<svg"), "SVG should contain svg tag");
-        assert!(
-            svg_content.len() > 100,
-            "SVG content should be substantial"
-        );
+        assert!(svg_content.len() > 100, "SVG content should be substantial");
 
         // Test PNG export
         let png_result = export::export_graph_as_png(&graph_nodes, &output_png, detected_languages);
@@ -680,10 +675,7 @@ mod tests {
             "PNG export should succeed, got: {:?}",
             png_result
         );
-        assert!(
-            output_png.exists(),
-            "PNG output file should be created"
-        );
+        assert!(output_png.exists(), "PNG output file should be created");
 
         // Verify PNG file has content
         let png_metadata = fs::metadata(&output_png).expect("Should read PNG metadata");
