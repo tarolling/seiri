@@ -10,7 +10,7 @@ repository = "https://github.com/tarolling/seiri/"
 version = "0.2.5"
 
 [dependencies]
-clap = { version = "4.5.44", features = ["derive", "cargo"] }
+clap = { version = "4.5.54", features = ["derive", "cargo"] }
 eframe = { version = "0.33.3" }
 egui = "0.33.3"
 fontdue = "0.9.3"
