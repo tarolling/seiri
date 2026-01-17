@@ -147,7 +147,7 @@ impl CppResolver {
     /// Check if an include is from an external library (system or third-party)
     fn is_external_library_include(&self, header_name: &str) -> bool {
         let lower = header_name.to_lowercase();
-        
+
         // Check for known external library prefixes
         for prefix in &self.external_lib_prefixes {
             let prefix_lower = prefix.to_lowercase();
@@ -165,9 +165,12 @@ impl CppResolver {
         }
 
         // Check for path-like patterns common in system includes
-        if header_name.contains("sys/") || header_name.contains("arpa/") || 
-           header_name.contains("netinet/") || header_name.contains("linux/") ||
-           header_name.contains("asm/") {
+        if header_name.contains("sys/")
+            || header_name.contains("arpa/")
+            || header_name.contains("netinet/")
+            || header_name.contains("linux/")
+            || header_name.contains("asm/")
+        {
             return true;
         }
 
@@ -192,20 +195,20 @@ impl CppResolver {
             match component {
                 "" | "." => {
                     // Empty component or current directory - skip unless it's the first component
-                    if normalized.is_empty() && component == "" {
+                    if normalized.is_empty() && component.is_empty() {
                         // Leading slash, preserve it
                         continue;
                     }
                 }
                 ".." => {
                     // Parent directory - pop if possible
-                    if !normalized.is_empty() && normalized.last().map_or(false, |c| c != "..") {
+                    if !normalized.is_empty() && normalized.last().is_some_and(|c| c != "..") {
                         normalized.pop();
                     } else if normalized.is_empty() {
                         // Preserve .. at the start for relative paths
                         normalized.push("..".to_string());
                     } else {
-                        // Keep consecutive .. 
+                        // Keep consecutive ..
                         normalized.push("..".to_string());
                     }
                 }
@@ -327,7 +330,7 @@ impl LanguageResolver for CppResolver {
     fn resolve_import(&self, import_path: &str, from_file: &Path) -> Option<PathBuf> {
         // Note: This is an immutable reference, so we can't update cache stats.
         // In a real implementation with RefCell, we could track cache performance.
-        
+
         // Check if this should be filtered (stdlib or external library)
         if self.should_filter_include(import_path) {
             return None; // Don't resolve system/external headers as they're external
@@ -393,7 +396,10 @@ mod tests {
     #[test]
     fn test_path_normalization_leading_slash() {
         let resolver = CppResolver::new();
-        assert_eq!(resolver.normalize_path("/path/to/file.h"), "/path/to/file.h");
+        assert_eq!(
+            resolver.normalize_path("/path/to/file.h"),
+            "/path/to/file.h"
+        );
         assert_eq!(resolver.normalize_path("/path/./file.h"), "/path/file.h");
         assert_eq!(resolver.normalize_path("/path/../file.h"), "/file.h");
     }
@@ -410,7 +416,10 @@ mod tests {
     #[test]
     fn test_path_normalization_consecutive_slashes() {
         let resolver = CppResolver::new();
-        assert_eq!(resolver.normalize_path("path//to///file.h"), "path/to/file.h");
+        assert_eq!(
+            resolver.normalize_path("path//to///file.h"),
+            "path/to/file.h"
+        );
     }
 
     #[test]
@@ -420,7 +429,7 @@ mod tests {
 
         let temp_dir = TempDir::new().expect("Failed to create temp dir");
         let project_root = temp_dir.path();
-        
+
         // Create a test include file
         let include_file = project_root.join("helper.h");
         fs::write(&include_file, "// helper").expect("Failed to write include file");
@@ -444,7 +453,7 @@ mod tests {
 
         let temp_dir = TempDir::new().expect("Failed to create temp dir");
         let project_root = temp_dir.path();
-        
+
         // Create include directory
         let include_dir = project_root.join("include");
         fs::create_dir(&include_dir).expect("Failed to create include dir");
@@ -485,7 +494,7 @@ mod tests {
 
         let temp_dir = TempDir::new().expect("Failed to create temp dir");
         let project_root = temp_dir.path();
-        
+
         // Create an include directory
         let include_dir = project_root.join("include");
         fs::create_dir(&include_dir).expect("Failed to create include dir");

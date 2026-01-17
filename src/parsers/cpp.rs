@@ -150,32 +150,31 @@ const MACRO_INCLUDE_PATTERNS: &[&str] = &[
 #[allow(dead_code)]
 fn extract_macro_includes(code: &str) -> HashSet<Import> {
     let mut includes = HashSet::new();
-    
+
     // Look for patterns like PATTERN("file.h") or PATTERN(<file.h>)
     for line in code.lines() {
         for pattern in MACRO_INCLUDE_PATTERNS {
             if line.contains(pattern) && line.contains('(') {
                 // Extract quoted path
-                if let Some(first_quote) = line.find('"') {
-                    if let Some(second_quote) = line[first_quote + 1..].find('"') {
-                        let path = &line[first_quote + 1..first_quote + 1 + second_quote];
-                        includes.insert(Import::new(path.to_string(), true));
-                    }
+                if let Some(first_quote) = line.find('"')
+                    && let Some(second_quote) = line[first_quote + 1..].find('"')
+                {
+                    let path = &line[first_quote + 1..first_quote + 1 + second_quote];
+                    includes.insert(Import::new(path.to_string(), true));
                 }
                 // Extract angle bracket path
-                if let Some(open_bracket) = line.find('<') {
-                    if let Some(close_bracket) = line[open_bracket + 1..].find('>') {
-                        let path = &line[open_bracket + 1..open_bracket + 1 + close_bracket];
-                        includes.insert(Import::new(path.to_string(), false));
-                    }
+                if let Some(open_bracket) = line.find('<')
+                    && let Some(close_bracket) = line[open_bracket + 1..].find('>')
+                {
+                    let path = &line[open_bracket + 1..open_bracket + 1 + close_bracket];
+                    includes.insert(Import::new(path.to_string(), false));
                 }
             }
         }
     }
-    
+
     includes
 }
-
 
 pub fn parse_cpp_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
     let code = fs::read_to_string(&path).ok()?;
@@ -408,4 +407,3 @@ GL_INCLUDE(<gl.h>)
         assert!(includes.is_empty() || includes.len() == 0);
     }
 }
-
