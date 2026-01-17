@@ -13,11 +13,6 @@ pub struct CppResolver {
     stdlib_headers: HashSet<String>,
     /// External library prefixes to exclude
     external_lib_prefixes: HashSet<String>,
-    /// Cache for resolved includes: (include_path, from_file) -> resolved_path
-    include_cache: HashMap<(String, PathBuf), Option<PathBuf>>,
-    /// Cache statistics
-    cache_hits: usize,
-    cache_misses: usize,
 }
 
 impl CppResolver {
@@ -183,74 +178,6 @@ impl CppResolver {
     fn should_filter_include(&self, header_name: &str) -> bool {
         self.is_stdlib_header(header_name) || self.is_external_library_include(header_name)
     }
-
-    /// Clear the include cache (useful after project changes)
-    pub fn clear_cache(&mut self) {
-        self.include_cache.clear();
-        self.cache_hits = 0;
-        self.cache_misses = 0;
-    }
-
-    /// Get cache statistics for debugging
-    pub fn cache_stats(&self) -> (usize, usize) {
-        (self.cache_hits, self.cache_misses)
-    }
-
-    /// Get cache hit ratio
-    pub fn cache_hit_ratio(&self) -> f64 {
-        if self.cache_hits + self.cache_misses == 0 {
-            0.0
-        } else {
-            self.cache_hits as f64 / (self.cache_hits + self.cache_misses) as f64
-        }
-    }
-
-    /// Detect if there's a circular dependency starting from a file
-    /// Returns a vector of file paths that form a cycle, empty if no cycle
-    pub fn detect_cycle(&self, start_file: &Path) -> Vec<PathBuf> {
-        let mut visited = HashSet::new();
-        let mut rec_stack = HashSet::new();
-        let mut path = Vec::new();
-
-        self.detect_cycle_dfs(start_file, &mut visited, &mut rec_stack, &mut path);
-        path
-    }
-
-    /// DFS helper for cycle detection
-    fn detect_cycle_dfs(
-        &self,
-        current: &Path,
-        visited: &mut HashSet<PathBuf>,
-        rec_stack: &mut HashSet<PathBuf>,
-        path: &mut Vec<PathBuf>,
-    ) -> bool {
-        let current_buf = current.to_path_buf();
-        
-        if !visited.contains(&current_buf) {
-            visited.insert(current_buf.clone());
-            rec_stack.insert(current_buf.clone());
-            path.push(current_buf.clone());
-
-            // Find all includes from this file
-            if let Some(_file_contents) = self.include_to_file.iter().find(|(_, v)| **v == current_buf) {
-                // In a real implementation, we would need to re-parse the file to get includes
-                // For now, this is a placeholder
-            }
-        } else if rec_stack.contains(&current_buf) {
-            // Found a cycle
-            return true;
-        }
-
-        false
-    }
-
-    /// Check if two files have a circular dependency relationship
-    pub fn has_circular_dependency(&self, file_a: &Path, file_b: &Path) -> bool {
-        // Simple check: if resolving file_a leads to file_b, and resolving file_b leads back to file_a
-        // This is a simplified version - full implementation would require dependency graph tracking
-        file_a != file_b
-    }
-
 
     /// Normalize an include path, resolving `.` and `..` components
     fn normalize_path(&self, path: &str) -> String {
@@ -639,71 +566,5 @@ mod tests {
         // Should not filter project includes
         assert!(!resolver.should_filter_include("myheader.h"));
         assert!(!resolver.should_filter_include("utils/helper.hpp"));
-    }
-
-    #[test]
-    fn test_cache_clear() {
-        let mut resolver = CppResolver::new();
-        assert_eq!(resolver.cache_stats(), (0, 0));
-        resolver.clear_cache();
-        assert_eq!(resolver.cache_stats(), (0, 0));
-    }
-
-    #[test]
-    fn test_cache_hit_ratio_empty() {
-        let resolver = CppResolver::new();
-        assert_eq!(resolver.cache_hit_ratio(), 0.0);
-    }
-
-    #[test]
-    fn test_detect_cycle_no_cycle() {
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let project_root = temp_dir.path();
-        
-        let file_a = project_root.join("a.h");
-        let file_b = project_root.join("b.h");
-
-        let mut resolver = CppResolver::new();
-        resolver.build_module_map(&[file_a.clone(), file_b.clone()], project_root);
-
-        let cycle = resolver.detect_cycle(&file_a);
-        // Should either be empty or not contain all files (no complete cycle)
-        assert!(cycle.is_empty() || cycle.len() <= 1);
-    }
-
-    #[test]
-    fn test_has_circular_dependency() {
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let project_root = temp_dir.path();
-
-        let file_a = project_root.join("a.h");
-        let file_b = project_root.join("b.h");
-
-        let mut resolver = CppResolver::new();
-        resolver.build_module_map(&[file_a.clone(), file_b.clone()], project_root);
-
-        // Different files should be checked for circular dependency
-        assert!(resolver.has_circular_dependency(&file_a, &file_b) || 
-                !resolver.has_circular_dependency(&file_a, &file_b));
-    }
-
-    #[test]
-    fn test_detect_cycle_self_reference() {
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let project_root = temp_dir.path();
-
-        let file_a = project_root.join("a.h");
-
-        let mut resolver = CppResolver::new();
-        resolver.build_module_map(&[file_a.clone()], project_root);
-
-        // File referencing itself should be detected
-        assert!(!resolver.has_circular_dependency(&file_a, &file_a));
     }
 }
