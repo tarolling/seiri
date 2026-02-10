@@ -56,10 +56,10 @@ impl SeiriGraph {
 
         let mut app = Self {
             graph_nodes,
-            camera_pos: egui::Vec2::ZERO,
+            camera_pos: Vec2::ZERO,
             camera: Camera::default(),
-            node_positions: vec![egui::Vec2::ZERO; n],
-            layout_type: crate::layout::LayoutType::default(),
+            node_positions: vec![Vec2::ZERO; n],
+            layout_type: LayoutType::default(),
             selected_node: None,
             hovered_node: None,
             min_node_radius: 20.0,
@@ -127,13 +127,13 @@ impl SeiriGraph {
         let center_x = (min_x + max_x) / 2.0;
         let center_y = (min_y + max_y) / 2.0;
 
-        // Convert positions to egui coordinates
+        // initialize positions
         for (i, node_idx) in node_indices.iter().enumerate() {
             if let Some(&(x, y)) = raw_positions.get(node_idx) {
-                // Scale and center the coordinates
-                let scaled_x = (x - center_x) * scale;
-                let scaled_y = (y - center_y) * scale;
-                self.node_positions[i] = vec2(scaled_x, scaled_y);
+                // scale and center the coordinates in world space
+                let world_x = (x - center_x) * scale + 500.0; // center at world position 500, matches default of 1000
+                let world_y = (y - center_y) * scale + 500.0;
+                self.node_positions[i] = vec2(world_x, world_y);
             }
         }
 
@@ -143,14 +143,6 @@ impl SeiriGraph {
         // Reset camera and zoom to frame the layout
         self.camera_pos = egui::Vec2::ZERO;
         self.camera.reset();
-        let positions = layout.layout(&graph);
-
-        // Convert positions to egui coordinates
-        for (i, node_idx) in node_indices.iter().enumerate() {
-            if let Some(&(x, y)) = positions.get(node_idx) {
-                self.node_positions[i] = vec2(x, y);
-            }
-        }
     }
 
     fn get_node_color(&self, index: usize) -> egui::Color32 {
