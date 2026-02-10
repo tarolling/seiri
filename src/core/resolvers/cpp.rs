@@ -439,7 +439,7 @@ mod tests {
         fs::write(&source_file, "#include \"helper.h\"").expect("Failed to write source file");
 
         let mut resolver = CppResolver::new();
-        resolver.build_module_map(&[include_file.clone()], project_root);
+        resolver.build_module_map(std::slice::from_ref(&include_file), project_root);
 
         let result = resolver.find_include_file("helper.h", &source_file);
         assert!(result.is_some());
@@ -466,7 +466,7 @@ mod tests {
         let source_file = project_root.join("main.cpp");
 
         let mut resolver = CppResolver::new();
-        resolver.build_module_map(&[include_file.clone()], project_root);
+        resolver.build_module_map(std::slice::from_ref(&include_file), project_root);
 
         let result = resolver.find_include_file("include/helper.h", &source_file);
         assert!(result.is_some());
@@ -506,7 +506,7 @@ mod tests {
         let source_file = project_root.join("main.cpp");
 
         let mut resolver = CppResolver::new();
-        resolver.build_module_map(&[include_file.clone()], project_root);
+        resolver.build_module_map(std::slice::from_ref(&include_file), project_root);
 
         // Request without extension - resolver should find it with .hpp
         let result = resolver.find_include_file("include/helper", &source_file);
