@@ -633,13 +633,10 @@ mod tests {
 
         let mut node_map: HashMap<PathBuf, FileNode> = HashMap::new();
         for (file_path, lang) in &language_files {
-            match lang {
-                Language::Cpp => {
-                    if let Some(node) = parse_cpp_file(file_path) {
-                        node_map.insert(file_path.clone(), node);
-                    }
-                }
-                _ => {}
+            if lang == &Language::Cpp
+                && let Some(node) = parse_cpp_file(file_path)
+            {
+                node_map.insert(file_path.clone(), node);
             }
         }
 

@@ -404,6 +404,6 @@ GL_INCLUDE(<gl.h>)
         let code = "no macros here";
         let includes = extract_macro_includes(code);
         // Should not panic and return empty set for non-matching patterns
-        assert!(includes.is_empty() || includes.len() == 0);
+        assert!(includes.is_empty());
     }
 }

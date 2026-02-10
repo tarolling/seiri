@@ -13,6 +13,7 @@ pub enum Language {
 
 impl Language {
     /// Returns all file extensions that indicate this language
+    #[inline(always)]
     pub fn extensions(&self) -> &'static [&'static str] {
         match self {
             Language::Python => &["py"],
@@ -44,6 +45,7 @@ impl Language {
     }
 
     #[allow(clippy::wrong_self_convention)]
+    #[inline(always)]
     pub fn to_string(&self) -> &'static str {
         match self {
             Language::Python => "Python",
@@ -54,6 +56,7 @@ impl Language {
     }
 
     /// Returns the color associated with this language (in hex format)
+    #[inline(always)]
     pub fn color(&self) -> &'static str {
         match self {
             Language::Python => "#FFD43B",
@@ -64,6 +67,7 @@ impl Language {
     }
 
     /// Returns the color associated with this language (in RGBA format)
+    #[inline(always)]
     pub fn color_rgba(&self) -> Color {
         match self {
             Language::Python => Color::from_rgba(1.0, 212.0 / 255.0, 59.0 / 255.0, 1.0).unwrap(),
@@ -90,12 +94,14 @@ impl Import {
     }
 
     /// Get the import path
+    #[inline(always)]
     pub fn path(&self) -> &str {
         &self.path
     }
 
     /// Check if this import is local (within the same project)
     /// or external (from another project or library)
+    #[inline(always)]
     pub fn is_local(&self) -> bool {
         self.is_local
     }
@@ -137,30 +143,37 @@ impl FileNode {
         }
     }
 
+    #[inline(always)]
     pub fn file(&self) -> &PathBuf {
         &self.file
     }
 
+    #[inline(always)]
     pub fn loc(&self) -> u32 {
         self.loc
     }
 
+    #[inline(always)]
     pub fn language(&self) -> &Language {
         &self.language
     }
 
+    #[inline(always)]
     pub fn imports(&self) -> &HashSet<Import> {
         &self.imports
     }
 
+    #[inline(always)]
     pub fn functions(&self) -> &HashSet<String> {
         &self.functions
     }
 
+    #[inline(always)]
     pub fn containers(&self) -> &HashSet<String> {
         &self.containers
     }
 
+    #[inline(always)]
     pub fn external_references(&self) -> &HashSet<String> {
         &self.external_references
     }
@@ -179,10 +192,12 @@ impl GraphNode {
         GraphNode { data, edges }
     }
 
+    #[inline(always)]
     pub fn data(&self) -> &FileNode {
         &self.data
     }
 
+    #[inline(always)]
     pub fn edges(&self) -> &Vec<PathBuf> {
         self.edges.as_ref()
     }
