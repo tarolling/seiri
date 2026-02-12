@@ -7,7 +7,7 @@ license = "MIT"
 name = "seiri-cli"
 readme = "README.md"
 repository = "https://github.com/tarolling/seiri/"
-version = "0.3.0"
+version = "0.3.1"
 
 [dependencies]
 clap = { version = "4.5.58", features = ["derive", "cargo"] }
