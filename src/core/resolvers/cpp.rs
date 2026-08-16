@@ -302,7 +302,7 @@ impl CppResolver {
             if !normalized.contains('.') {
                 let extensions = vec![".h", ".hpp", ".hxx", ".h++", ".cc", ".cpp", ".cxx", ".c++"];
                 for ext in extensions {
-                    let with_ext = search_dir.join(format!("{}{}", &normalized, ext));
+                    let with_ext = search_dir.join(format!("{}{}", normalized, ext));
                     if with_ext.exists() && with_ext.is_file() {
                         return Some(with_ext);
                     }
