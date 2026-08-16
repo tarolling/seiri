@@ -577,7 +577,7 @@ mod tests {
         );
 
         // Verify positions have valid coordinates
-        for (_node_idx, (x, y)) in positions_sugiyama.iter() {
+        for (x, y) in positions_sugiyama.values() {
             assert!(
                 x.is_finite() && y.is_finite(),
                 "Sugiyama layout position should have finite coordinates: ({}, {})",
@@ -586,7 +586,7 @@ mod tests {
             );
         }
 
-        for (_node_idx, (x, y)) in positions_circular.iter() {
+        for (x, y) in positions_circular.values() {
             assert!(
                 x.is_finite() && y.is_finite(),
                 "Circular layout position should have finite coordinates: ({}, {})",

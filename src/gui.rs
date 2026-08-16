@@ -245,7 +245,7 @@ impl SeiriGraph {
                                     pos2(right.x, right.y),
                                 ],
                                 edge_color,
-                                egui::Stroke::new(1.0, edge_color),
+                                egui::Stroke::new(1.0_f32, edge_color),
                             ));
                         }
                     }
