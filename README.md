@@ -61,6 +61,7 @@ seiri <path> [gui|<export_path>] [-v|--verbose]
 * `<export_path>` - Export graph to specified path; currently supports `SVG` and `PNG` file exports
 * `-v`/`--verbose` - Show detailed logging about file detection and parsing
 * `--no-gitignore` - Do not respect `.gitignore` file if present
+* `--update` - Update the binary to the latest GitHub release
 
 ## Supported Languages
 

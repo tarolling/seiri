@@ -18,6 +18,14 @@ font-kit = "0.14.3"
 ignore = "0.4.25"
 once_cell = "1.21.3"
 petgraph = "0.8.3"
+self_update = { version = "0.44", default-features = false, features = [
+    "reqwest",
+    "rustls",
+    "archive-tar",
+    "compression-flate2",
+    "archive-zip",
+    "compression-zip-deflate",
+] }
 svg = "0.18.0"
 tiny-skia = "0.12"
 tree-sitter = "0.26.8"
