@@ -75,11 +75,15 @@ fn main() {
     }
 
     let verbose = args.verbose;
+    let already_updating = args.update;
 
     match run(args) {
         Ok(_) => {
             if verbose {
                 println!("Operation completed successfully.");
+            }
+            if !already_updating {
+                update::notify_if_update_available();
             }
         }
         Err(msg) => {
