@@ -122,25 +122,25 @@ impl LanguageResolver for RustResolver {
         }
 
         if import_path.starts_with("crate::") {
-            // Absolute crate import
+            // absolute crate import
             self.module_to_file.get(import_path).cloned()
         } else if import_path.starts_with("super::") {
-            // Super import - go up one module level
+            // super import: go up one module level
             if let Some(current_module) = self.file_to_module.get(from_file) {
                 let mut new_parts: Vec<&str> = current_module.split("::").collect();
                 let mut remaining_path = import_path;
 
-                // Loop to go up one module level for each "super::"
+                // loop to go up one module level for each "super::"
                 while let Some(stripped_path) = remaining_path.strip_prefix("super::") {
-                    // Cannot go above the crate root
+                    // cannot go above the crate root
                     if new_parts.len() <= 1 {
                         return None;
                     }
-                    new_parts.pop(); // Go up one level
+                    new_parts.pop(); // go up one level
                     remaining_path = stripped_path;
                 }
 
-                // Append the rest of the import path.
+                // append the rest of the import path
                 new_parts.extend(remaining_path.split("::"));
                 let resolved_path = new_parts.join("::");
 
@@ -149,16 +149,11 @@ impl LanguageResolver for RustResolver {
                 None
             }
         } else if import_path.starts_with("self::") {
-            // Self import - same module level
+            // self import: resolves within the current module itself
             if let Some(current_module) = self.file_to_module.get(from_file) {
                 let self_import = import_path.strip_prefix("self::").unwrap();
-                let current_parts: Vec<&str> = current_module.split("::").collect();
 
-                if current_parts.len() <= 1 {
-                    return None;
-                }
-
-                let mut new_parts = current_parts[..current_parts.len() - 1].to_vec();
+                let mut new_parts: Vec<&str> = current_module.split("::").collect();
                 new_parts.extend(self_import.split("::"));
                 let resolved_path = new_parts.join("::");
                 self.module_to_file.get(&resolved_path).cloned()
@@ -166,15 +161,18 @@ impl LanguageResolver for RustResolver {
                 None
             }
         } else {
-            // Try to resolve as relative import or direct module name
+            // try to resolve as relative import or direct module name
             if let Some(current_module) = self.file_to_module.get(from_file) {
                 let current_parts: Vec<&str> = current_module.split("::").collect();
-                if current_parts.len() <= 1 {
-                    return None;
-                }
 
-                // Try as sibling module
-                let mut new_parts = current_parts[..current_parts.len() - 1].to_vec();
+                // try as a sibling module of the current one; at the crate root
+                // there is no parent to step up to, so the root itself is the
+                // base rather than bailing out
+                let mut new_parts = if current_parts.len() <= 1 {
+                    current_parts.clone()
+                } else {
+                    current_parts[..current_parts.len() - 1].to_vec()
+                };
                 new_parts.extend(import_path.split("::"));
                 let resolved_path = new_parts.join("::");
                 self.module_to_file.get(&resolved_path).cloned()
@@ -281,6 +279,70 @@ mod tests {
 
         // From `api/mod.rs`, `routes` should resolve to `api/routes.rs`
         let resolved = resolver.resolve_import("routes", &root.join("api/mod.rs"));
+        assert_eq!(resolved, Some(root.join("api/routes.rs")));
+    }
+
+    #[test]
+    fn test_rust_resolver_self_import_same_module() {
+        let temp_dir = TempDir::new().unwrap();
+        setup_test_project(&temp_dir);
+        let root = temp_dir.path();
+        let files = vec![
+            root.join("lib.rs"),
+            root.join("utils.rs"),
+            root.join("api/mod.rs"),
+            root.join("api/routes.rs"),
+            root.join("api/routes/nested.rs"),
+        ];
+
+        let mut resolver = RustResolver::new();
+        resolver.build_module_map(&files, root);
+
+        // From `api/routes.rs` (module `crate::api::routes`), `self::nested` refers
+        // to an item in the *same* module (`crate::api::routes::nested`), not to
+        // `crate::api::nested` (the parent module).
+        let resolved = resolver.resolve_import("self::nested", &root.join("api/routes.rs"));
+        assert_eq!(resolved, Some(root.join("api/routes/nested.rs")));
+    }
+
+    #[test]
+    fn test_rust_resolver_self_import_at_crate_root() {
+        let temp_dir = TempDir::new().unwrap();
+        setup_test_project(&temp_dir);
+        let root = temp_dir.path();
+        let files = vec![
+            root.join("lib.rs"),
+            root.join("utils.rs"),
+            root.join("api/mod.rs"),
+            root.join("api/routes.rs"),
+        ];
+
+        let mut resolver = RustResolver::new();
+        resolver.build_module_map(&files, root);
+
+        // From `lib.rs` (the crate root), `self::utils` refers to `crate::utils`.
+        let resolved = resolver.resolve_import("self::utils", &root.join("lib.rs"));
+        assert_eq!(resolved, Some(root.join("utils.rs")));
+    }
+
+    #[test]
+    fn test_rust_resolver_root_level_bare_import() {
+        let temp_dir = TempDir::new().unwrap();
+        setup_test_project(&temp_dir);
+        let root = temp_dir.path();
+        let files = vec![
+            root.join("lib.rs"),
+            root.join("utils.rs"),
+            root.join("api/mod.rs"),
+            root.join("api/routes.rs"),
+        ];
+
+        let mut resolver = RustResolver::new();
+        resolver.build_module_map(&files, root);
+
+        // From `lib.rs` (the crate root), a bare `api::routes` path should resolve
+        // directly against the crate root instead of short-circuiting to `None`.
+        let resolved = resolver.resolve_import("api::routes", &root.join("lib.rs"));
         assert_eq!(resolved, Some(root.join("api/routes.rs")));
     }
 
