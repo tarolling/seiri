@@ -6,6 +6,7 @@ mod core;
 mod export;
 mod layout;
 mod parsers;
+mod update;
 
 use clap::{Parser, crate_name, crate_version};
 use core::defs::{FileNode, Language};
@@ -34,6 +35,9 @@ struct Cli {
     /// Ignore .gitignore files
     #[arg(long)]
     no_gitignore: bool,
+    /// Update the binary to the latest GitHub release
+    #[arg(long)]
+    update: bool,
 }
 
 impl Cli {
@@ -71,11 +75,15 @@ fn main() {
     }
 
     let verbose = args.verbose;
+    let already_updating = args.update;
 
     match run(args) {
         Ok(_) => {
             if verbose {
                 println!("Operation completed successfully.");
+            }
+            if !already_updating {
+                update::notify_if_update_available();
             }
         }
         Err(msg) => {
@@ -103,11 +111,16 @@ fn run(args: Cli) -> Result<(), String> {
         verbose,
         version,
         no_gitignore,
+        update,
     } = args;
 
     if version {
         println!("{} | version {}", crate_name!(), crate_version!());
         return Ok(());
+    }
+
+    if update {
+        return update::run_self_update(verbose);
     }
 
     // Get the project path, using current directory as default
@@ -317,6 +330,7 @@ mod tests {
             verbose: false,
             version: false,
             no_gitignore: false,
+            update: false,
         };
 
         let result = args.validate();
@@ -337,6 +351,7 @@ mod tests {
             verbose: false,
             version: false,
             no_gitignore: false,
+            update: false,
         };
 
         let result = run(args);
@@ -354,6 +369,7 @@ mod tests {
             verbose: false,
             version: false,
             no_gitignore: false,
+            update: false,
         };
         let result = run(args);
         // we expect an error since the directory is empty
@@ -366,6 +382,7 @@ mod tests {
             verbose: false,
             version: false,
             no_gitignore: false,
+            update: false,
         };
         let result = run(args);
         assert!(result.is_ok());
@@ -383,11 +400,21 @@ mod tests {
             verbose: true,
             version: false,
             no_gitignore: false,
+            update: false,
         };
 
         let result = run(args);
 
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_update_flag_parses_without_project_path() {
+        let args = Cli::try_parse_from(["seiri", "--update"]).unwrap();
+
+        assert!(args.update);
+        assert!(args.project_path.is_none());
+        assert!(args.validate().is_ok());
     }
 
     #[test]
