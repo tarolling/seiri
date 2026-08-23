@@ -61,48 +61,53 @@ impl SugiyamaLayout {
     }
 
     /// Create a directed acyclic graph by removing a minimal set of edges.
+    ///
+    /// Uses an iterative DFS (explicit stack) rather than recursion so this
+    /// can't stack-overflow on large/deep graphs, and shares a single
+    /// `visited` set across all start nodes so each node is only traversed
+    /// from once instead of restarting a fresh traversal per start node.
     fn make_dag(&self, graph: &Graph<(), ()>) -> Graph<(), ()> {
         let mut dag = graph.clone();
+        let mut visited = HashSet::new();
 
-        // find all cycles and break them
         for start_node in graph.node_indices() {
-            let mut visited = HashSet::new();
-            let mut path = Vec::new();
-            let mut on_stack = HashSet::new();
-
-            fn dfs(
-                current: NodeIndex,
-                graph: &mut Graph<(), ()>,
-                visited: &mut HashSet<NodeIndex>,
-                path: &mut Vec<NodeIndex>,
-                on_stack: &mut HashSet<NodeIndex>,
-            ) {
-                visited.insert(current);
-                on_stack.insert(current);
-                path.push(current);
-
-                for neighbor in graph
-                    .neighbors_directed(current, Direction::Outgoing)
-                    .collect::<Vec<_>>()
-                {
-                    if !visited.contains(&neighbor) {
-                        dfs(neighbor, graph, visited, path, on_stack);
-                    } else if on_stack.contains(&neighbor) {
-                        // found a cycle, remove the last edge
-                        if let Some(&last) = path.last()
-                            && let Some(edge) = graph.find_edge(last, neighbor)
-                        {
-                            graph.remove_edge(edge);
-                        }
-                    }
-                }
-
-                path.pop();
-                on_stack.remove(&current);
+            if visited.contains(&start_node) {
+                continue;
             }
 
-            if !visited.contains(&start_node) {
-                dfs(start_node, &mut dag, &mut visited, &mut path, &mut on_stack);
+            let mut on_stack = HashSet::new();
+            let mut neighbor_cache: HashMap<NodeIndex, Vec<NodeIndex>> = HashMap::new();
+            // explicit DFS stack: (node, index of the next neighbor to visit)
+            let mut stack: Vec<(NodeIndex, usize)> = Vec::new();
+
+            visited.insert(start_node);
+            on_stack.insert(start_node);
+            stack.push((start_node, 0));
+
+            while let Some(&(current, idx)) = stack.last() {
+                let neighbors = neighbor_cache.entry(current).or_insert_with(|| {
+                    dag.neighbors_directed(current, Direction::Outgoing)
+                        .collect()
+                });
+
+                if idx < neighbors.len() {
+                    let neighbor = neighbors[idx];
+                    stack.last_mut().unwrap().1 += 1;
+
+                    if !visited.contains(&neighbor) {
+                        visited.insert(neighbor);
+                        on_stack.insert(neighbor);
+                        stack.push((neighbor, 0));
+                    } else if on_stack.contains(&neighbor) {
+                        // found a cycle, remove the edge that closes it
+                        if let Some(edge) = dag.find_edge(current, neighbor) {
+                            dag.remove_edge(edge);
+                        }
+                    }
+                } else {
+                    on_stack.remove(&current);
+                    stack.pop();
+                }
             }
         }
 
@@ -441,5 +446,54 @@ mod tests {
                 "siblings collapsed too close together: gap {gap} < configured minimum {min_gap}"
             );
         }
+    }
+
+    /// `make_dag`'s cycle-breaking DFS must be iterative: a long chain
+    /// closed into one big cycle would blow the stack with a naive
+    /// recursive DFS, and restarting a fresh traversal per start node would
+    /// make this quadratic. Neither should happen here.
+    #[test]
+    fn make_dag_breaks_large_cycle_without_stack_overflow() {
+        let layout = SugiyamaLayout::new(SugiyamaConfig::default());
+        let mut graph: Graph<(), ()> = Graph::new();
+        let n = 100_000;
+        let nodes: Vec<_> = (0..n).map(|_| graph.add_node(())).collect();
+        for pair in nodes.windows(2) {
+            graph.add_edge(pair[0], pair[1], ());
+        }
+        // Close the chain into one long cycle.
+        graph.add_edge(nodes[n - 1], nodes[0], ());
+
+        let dag = layout.make_dag(&graph);
+
+        assert!(
+            petgraph::algo::toposort(&dag, None).is_ok(),
+            "make_dag must remove enough edges to leave an acyclic graph"
+        );
+        assert_eq!(dag.edge_count(), graph.edge_count() - 1);
+    }
+
+    /// Several disjoint cycles must each be broken independently, even
+    /// though `make_dag` now shares one `visited` set across start nodes
+    /// instead of resetting it per component.
+    #[test]
+    fn make_dag_breaks_multiple_disjoint_cycles() {
+        let layout = SugiyamaLayout::new(SugiyamaConfig::default());
+        let mut graph: Graph<(), ()> = Graph::new();
+
+        for _ in 0..5 {
+            let a = graph.add_node(());
+            let b = graph.add_node(());
+            let c = graph.add_node(());
+            graph.add_edge(a, b, ());
+            graph.add_edge(b, c, ());
+            graph.add_edge(c, a, ());
+        }
+
+        let dag = layout.make_dag(&graph);
+
+        assert!(petgraph::algo::toposort(&dag, None).is_ok());
+        // One edge removed per 3-node cycle.
+        assert_eq!(dag.edge_count(), graph.edge_count() - 5);
     }
 }
