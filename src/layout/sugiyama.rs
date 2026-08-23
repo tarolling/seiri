@@ -328,6 +328,27 @@ impl SugiyamaLayout {
             }
             coordinates = adjusted_coords.clone();
         }
+
+        // refinement above pulls nodes toward their neighbors' x
+        // coordinates with no lower bound, which can collapse siblings in
+        // the same layer on top of each other; restore `node_spacing` as a
+        // hard minimum by sweeping each layer left-to-right in x order and
+        // pushing any node that ended up too close to its left neighbor
+        let min_gap = self.config.node_spacing * self.config.scale_factor;
+        for layer in layers.iter() {
+            let mut ids: Vec<NodeIndex> = layer.iter().map(|node| node.id).collect();
+            ids.sort_by(|&a, &b| coordinates[&a].0.partial_cmp(&coordinates[&b].0).unwrap());
+
+            for pair in ids.windows(2) {
+                let (left, right) = (pair[0], pair[1]);
+                let min_x = coordinates[&left].0 + min_gap;
+                if coordinates[&right].0 < min_x {
+                    let y = coordinates[&right].1;
+                    coordinates.insert(right, (min_x, y));
+                }
+            }
+        }
+
         coordinates
     }
 }
@@ -389,5 +410,36 @@ mod tests {
             2,
             "B must be promoted to layer 2 via the longer A->C->B path"
         );
+    }
+
+    /// `node_spacing` is documented as "Minimum horizontal distance between
+    /// nodes in the same layer". A hub node with several children pulls all
+    /// of them toward the same x during the connectivity-based refinement
+    /// pass; that pass must not be allowed to collapse siblings closer than
+    /// the configured minimum.
+    #[test]
+    fn assign_coordinates_respects_minimum_node_spacing_after_refinement() {
+        let config = SugiyamaConfig::default();
+        let layout = SugiyamaLayout::new(config.clone());
+        let mut graph: Graph<(), ()> = Graph::new();
+        let hub = graph.add_node(());
+        let children: Vec<_> = (0..5).map(|_| graph.add_node(())).collect();
+        for &c in &children {
+            graph.add_edge(hub, c, ());
+        }
+
+        let positions = layout.layout(&graph);
+
+        let min_gap = config.node_spacing * config.scale_factor;
+        let mut child_xs: Vec<f32> = children.iter().map(|c| positions[c].0).collect();
+        child_xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+        for pair in child_xs.windows(2) {
+            let gap = pair[1] - pair[0];
+            assert!(
+                gap >= min_gap - 1e-3,
+                "siblings collapsed too close together: gap {gap} < configured minimum {min_gap}"
+            );
+        }
     }
 }

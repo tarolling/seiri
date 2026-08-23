@@ -921,11 +921,9 @@ mod tests {
         let tip = edge_tip_at_node_boundary(p, p, 20.0);
         assert_eq!(tip, p);
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+    // --- build_dependency_graph (layout must see the real dependency targets) ---
+
     use crate::core::defs::{FileNode, Language};
 
     fn make_node(path: &str, deps: &[&str]) -> GraphNode {
