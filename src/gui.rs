@@ -715,7 +715,7 @@ impl SeiriGraph {
                 .collect();
             let outgoing = self.graph_nodes[selected_idx].edges();
 
-            ui.collapsing(format!("📥 Incoming ({})", incoming.len()), |ui| {
+            ui.collapsing(format!("Incoming ({})", incoming.len()), |ui| {
                 for (idx, dep_node) in incoming {
                     let name = dep_node
                         .data()
@@ -729,7 +729,7 @@ impl SeiriGraph {
                 }
             });
 
-            ui.collapsing(format!("📤 Outgoing ({})", outgoing.len()), |ui| {
+            ui.collapsing(format!("Outgoing ({})", outgoing.len()), |ui| {
                 for edge in outgoing {
                     if let Some(idx) = self
                         .graph_nodes
@@ -755,25 +755,19 @@ impl SeiriGraph {
             ui.strong("Code Structure");
 
             if !node.functions().is_empty() {
-                ui.collapsing(
-                    format!("🔧 Functions ({})", node.functions().len()),
-                    |ui| {
-                        for func in node.functions() {
-                            ui.monospace(func);
-                        }
-                    },
-                );
+                ui.collapsing(format!("Functions ({})", node.functions().len()), |ui| {
+                    for func in node.functions() {
+                        ui.monospace(func);
+                    }
+                });
             }
 
             if !node.containers().is_empty() {
-                ui.collapsing(
-                    format!("📦 Containers ({})", node.containers().len()),
-                    |ui| {
-                        for container in node.containers() {
-                            ui.monospace(container);
-                        }
-                    },
-                );
+                ui.collapsing(format!("Containers ({})", node.containers().len()), |ui| {
+                    for container in node.containers() {
+                        ui.monospace(container);
+                    }
+                });
             }
         });
 
@@ -786,7 +780,7 @@ impl SeiriGraph {
                     node.imports().iter().partition(|imp| imp.is_local());
 
                 if !local.is_empty() {
-                    ui.collapsing(format!("🏠 Local ({})", local.len()), |ui| {
+                    ui.collapsing(format!("Local ({})", local.len()), |ui| {
                         for imp in local {
                             ui.monospace(imp.path());
                         }
@@ -794,7 +788,7 @@ impl SeiriGraph {
                 }
 
                 if !external.is_empty() {
-                    ui.collapsing(format!("🌐 External ({})", external.len()), |ui| {
+                    ui.collapsing(format!("External ({})", external.len()), |ui| {
                         for imp in external {
                             ui.monospace(imp.path());
                         }
