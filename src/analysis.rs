@@ -1,29 +1,29 @@
 use petgraph::{
+    algo::kosaraju_scc,
     graph::{Graph, NodeIndex},
-    visit::EdgeRef,
 };
 use std::collections::{HashMap, HashSet, VecDeque};
 
 #[derive(Debug)]
 pub struct GraphAnalysis {
-    /// Size of each strongly connected component
+    /// Size of each strongly connected component.
     pub scc_sizes: Vec<usize>,
-    /// Mapping of nodes to their SCC index
+    /// Mapping of nodes to their SCC index.
     pub node_to_scc: HashMap<NodeIndex, usize>,
-    /// Size of the largest SCC
+    /// Size of the largest SCC.
     pub largest_scc_size: usize,
-    /// Nodes in the largest SCC
+    /// Nodes in the largest SCC.
     pub largest_scc_nodes: HashSet<NodeIndex>,
-    /// All SCCs grouped by size (size -> set of SCCs)
-    /// Each SCC is a set of node indices
+    /// All SCCs grouped by size (size -> set of SCCs).
+    /// Each SCC is a set of node indices.
     pub sccs_by_size: HashMap<usize, Vec<HashSet<NodeIndex>>>,
-    /// Betweenness centrality scores for each node
-    /// Higher values indicate nodes that appear on more shortest paths
+    /// Betweenness centrality scores for each node.
+    /// Higher values indicate nodes that appear on more shortest paths.
     pub betweenness_centrality: HashMap<NodeIndex, f64>,
 }
 
 impl GraphAnalysis {
-    /// Calculate betweenness centrality for a single source node
+    /// Calculate betweenness centrality for a single source node.
     fn calculate_betweenness_from_source(
         graph: &Graph<(), ()>,
         source: NodeIndex,
@@ -82,12 +82,16 @@ impl GraphAnalysis {
         }
     }
 
-    /// Calculate betweenness centrality for all nodes
+    /// Calculate betweenness centrality for all nodes. A node with
+    /// higher betweenness centrality is more likely to be a chokepoint/common
+    /// dependency, indicating possible god objects or bloated files.
+    /// See: https://en.wikipedia.org/wiki/Betweenness_centrality
     fn calculate_betweenness_centrality(graph: &Graph<(), ()>) -> HashMap<NodeIndex, f64> {
         let mut centrality: HashMap<NodeIndex, f64> =
             graph.node_indices().map(|n| (n, 0.0)).collect();
 
         // Calculate betweenness from each source node
+        // TODO(taro): approximate this someday; terribly expensive on large graphs
         for source in graph.node_indices() {
             Self::calculate_betweenness_from_source(graph, source, &mut centrality);
         }
@@ -103,7 +107,7 @@ impl GraphAnalysis {
         centrality
     }
 
-    /// Analyze the graph to find both SCCs and betweenness centrality
+    /// Analyze the graph to find both SCCs and betweenness centrality.
     pub fn analyze_graph(graph: &Graph<(), ()>) -> Self {
         let mut analysis = Self {
             scc_sizes: Vec::new(),
@@ -121,110 +125,35 @@ impl GraphAnalysis {
         // Calculate betweenness centrality
         analysis.betweenness_centrality = Self::calculate_betweenness_centrality(graph);
 
-        // Step 1: First DFS to get finishing times
-        let mut visited = HashSet::new();
-        let mut finish_order = Vec::new();
+        // Kosaraju's algorithm, computed iteratively (no recursion depth bound)
+        // by petgraph so it can't stack-overflow on large/deep graphs
+        for scc_nodes in kosaraju_scc(graph) {
+            let original_scc: HashSet<NodeIndex> = scc_nodes.into_iter().collect();
 
-        for node in graph.node_indices() {
-            if !visited.contains(&node) {
-                Self::dfs_first_pass(graph, node, &mut visited, &mut finish_order);
+            // Update largest SCC if this one is bigger
+            if original_scc.len() > analysis.largest_scc_size {
+                analysis.largest_scc_size = original_scc.len();
+                analysis.largest_scc_nodes = original_scc.clone();
             }
-        }
 
-        // Step 2: Create transposed graph
-        let mut transposed = Graph::new();
-        let mut node_map = HashMap::new();
+            // Record SCC size and node mappings
+            let scc_index = analysis.scc_sizes.len();
+            let scc_size = original_scc.len();
+            analysis.scc_sizes.push(scc_size);
 
-        // Add all nodes
-        for node in graph.node_indices() {
-            node_map.insert(node, transposed.add_node(()));
-        }
+            // Add to SCCs by size
+            analysis
+                .sccs_by_size
+                .entry(scc_size)
+                .or_default()
+                .push(original_scc.clone());
 
-        // Add reversed edges
-        for edge in graph.edge_references() {
-            transposed.add_edge(node_map[&edge.target()], node_map[&edge.source()], ());
-        }
-
-        // Step 3: Second DFS to find SCCs
-        visited.clear();
-        let mut current_scc = HashSet::new();
-
-        for &node in finish_order.iter().rev() {
-            let transposed_node = node_map[&node];
-            if !visited.contains(&transposed_node) {
-                current_scc.clear();
-                Self::dfs_second_pass(&transposed, transposed_node, &mut visited, &mut current_scc);
-
-                // Map back to original nodes
-                let original_scc: HashSet<_> = current_scc
-                    .iter()
-                    .map(|&n| {
-                        node_map
-                            .iter()
-                            .find(|&(_, &v)| v == n)
-                            .map(|(&k, _)| k)
-                            .unwrap()
-                    })
-                    .collect();
-
-                // Update largest SCC if this one is bigger
-                if original_scc.len() > analysis.largest_scc_size {
-                    analysis.largest_scc_size = original_scc.len();
-                    analysis.largest_scc_nodes = original_scc.clone();
-                }
-
-                // Record SCC size and node mappings
-                let scc_index = analysis.scc_sizes.len();
-                let scc_size = original_scc.len();
-                analysis.scc_sizes.push(scc_size);
-
-                // Add to SCCs by size
-                analysis
-                    .sccs_by_size
-                    .entry(scc_size)
-                    .or_default()
-                    .push(original_scc.clone());
-
-                for node in original_scc {
-                    analysis.node_to_scc.insert(node, scc_index);
-                }
+            for node in original_scc {
+                analysis.node_to_scc.insert(node, scc_index);
             }
         }
 
         analysis
-    }
-
-    fn dfs_first_pass(
-        graph: &Graph<(), ()>,
-        start: NodeIndex,
-        visited: &mut HashSet<NodeIndex>,
-        finish_order: &mut Vec<NodeIndex>,
-    ) {
-        visited.insert(start);
-
-        for neighbor in graph.neighbors(start) {
-            if !visited.contains(&neighbor) {
-                Self::dfs_first_pass(graph, neighbor, visited, finish_order);
-            }
-        }
-
-        finish_order.push(start);
-    }
-
-    fn dfs_second_pass(
-        graph: &Graph<(), ()>,
-        start: NodeIndex,
-        visited: &mut HashSet<NodeIndex>,
-        component: &mut HashSet<NodeIndex>,
-    ) {
-        visited.insert(start);
-        component.insert(start);
-
-        for neighbor in graph.neighbors(start) {
-            if !visited.contains(&neighbor) {
-                Self::dfs_second_pass(graph, neighbor, visited, component);
-            }
-        }
     }
 
     /// Returns whether a node is part of the largest SCC
@@ -352,6 +281,28 @@ mod tests {
         // Check SCCs by size
         assert!(analysis.sccs_by_size.get(&2).unwrap().len() == 1); // One 2-node SCC
         assert!(analysis.sccs_by_size.get(&1).unwrap().len() == 2); // Two 1-node SCCs
+    }
+
+    /// The SCC computation must not use a naive recursive DFS: a long chain
+    /// closed into one big cycle would blow the stack with recursion depth
+    /// equal to the chain length. Exercises `kosaraju_scc` directly (rather
+    /// than through `analyze_graph`) so the test isn't also paying for
+    /// betweenness centrality's separate O(V*(V+E)) cost on a huge graph.
+    #[test]
+    fn kosaraju_scc_handles_large_cycle_without_stack_overflow() {
+        let mut graph = Graph::<(), ()>::new();
+        let n = 100_000;
+        let nodes: Vec<_> = (0..n).map(|_| graph.add_node(())).collect();
+        for pair in nodes.windows(2) {
+            graph.add_edge(pair[0], pair[1], ());
+        }
+        // Close the chain into one long cycle.
+        graph.add_edge(nodes[n - 1], nodes[0], ());
+
+        let sccs = kosaraju_scc(&graph);
+
+        assert_eq!(sccs.len(), 1);
+        assert_eq!(sccs[0].len(), n);
     }
 
     #[test]
