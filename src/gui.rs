@@ -634,10 +634,6 @@ impl SeiriGraph {
     /// Shows things like layout types, show/hide options, and zoom level.
     fn render_controls_panel(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
-            ui.heading("Project Structure Graph");
-
-            ui.separator();
-
             ui.horizontal(|ui| {
                 ui.checkbox(&mut self.show_labels, "Show Labels");
                 ui.checkbox(&mut self.show_dependencies, "Show Dependencies");
@@ -871,15 +867,11 @@ pub fn run_gui(graph_nodes: Vec<GraphNode>) {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1200.0, 800.0])
             .with_resizable(true)
-            .with_title("seiri - Project Structure Graph"),
+            .with_title("seiri"),
         ..Default::default()
     };
 
-    let _ = eframe::run_native(
-        "seiri - Project Structure Graph",
-        native_options,
-        Box::new(|_cc| Ok(Box::new(app))),
-    );
+    let _ = eframe::run_native("seiri", native_options, Box::new(|_cc| Ok(Box::new(app))));
 }
 
 #[cfg(test)]
