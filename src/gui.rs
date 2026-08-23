@@ -3,11 +3,25 @@ use crate::core::defs::GraphNode;
 use crate::gui::camera::Camera;
 use crate::layout::{self, LayoutType};
 use eframe::egui;
-use egui::{Rect, Response, Sense, Ui, Vec2, pos2, vec2};
+use egui::{Pos2, Rect, Response, Sense, Ui, Vec2, pos2, vec2};
 use petgraph::{Graph, graph::NodeIndex};
 use std::collections::HashMap;
 
 mod camera;
+mod culling;
+
+use culling::segment_intersects_rect;
+
+/// Computes the point where a directed edge from `from` to `to` should terminate so it
+/// touches the boundary of the target node (a circle of `radius` centered at
+/// `to`) instead of piercing through to its center.
+fn edge_tip_at_node_boundary(from: Pos2, to: Pos2, radius: f32) -> Pos2 {
+    let delta = to - from;
+    if delta.length_sq() <= f32::EPSILON {
+        return to;
+    }
+    to - delta.normalized() * radius
+}
 
 pub struct SeiriGraph {
     pub graph_nodes: Vec<GraphNode>,
@@ -174,6 +188,24 @@ impl SeiriGraph {
         }
     }
 
+    /// Screen-space render radius of node `index`, accounting for LOC/betweenness sizing and
+    /// the current camera zoom. Shared by edge anchoring and node drawing so both agree on
+    /// where a node's boundary actually is.
+    fn node_screen_radius(&self, index: usize) -> f32 {
+        let betweenness_score = self
+            .graph_analysis
+            .as_ref()
+            .and_then(|analysis| analysis.get_betweenness_centrality(NodeIndex::new(index)));
+        let base_radius = self.graph_nodes[index].calculate_size(
+            self.min_loc,
+            self.max_loc,
+            self.min_node_radius,
+            self.max_node_radius,
+            betweenness_score,
+        );
+        base_radius * self.camera.zoom_level()
+    }
+
     fn draw_graph(&mut self, ui: &mut Ui, canvas_rect: &Rect) {
         let painter = ui.painter_at(*canvas_rect);
 
@@ -194,10 +226,9 @@ impl SeiriGraph {
                             .camera
                             .world_to_screen(self.node_positions[j].to_pos2(), canvas_rect);
 
-                        // Only draw if both nodes are visible
-                        if canvas_rect.contains(egui::pos2(from_pos.x, from_pos.y))
-                            || canvas_rect.contains(egui::pos2(to_pos.x, to_pos.y))
-                        {
+                        // Draw if any part of the edge passes through the canvas, not just
+                        // when an endpoint happens to land inside it.
+                        if segment_intersects_rect(from_pos, to_pos, *canvas_rect) {
                             let edge_color =
                                 if Some(i) == self.selected_node || Some(j) == self.selected_node {
                                     egui::Color32::from_rgb(255, 150, 50)
@@ -205,11 +236,17 @@ impl SeiriGraph {
                                     egui::Color32::from_rgba_premultiplied(100, 150, 200, 80)
                                 };
 
+                            // Anchor the arrow tip to the target node's boundary rather than
+                            // its center.
+                            let target_radius = self.node_screen_radius(j);
+                            let arrow_tip =
+                                edge_tip_at_node_boundary(from_pos, to_pos, target_radius);
+
                             // Draw the main line
                             painter.line_segment(
                                 [
                                     egui::pos2(from_pos.x, from_pos.y),
-                                    egui::pos2(to_pos.x, to_pos.y),
+                                    egui::pos2(arrow_tip.x, arrow_tip.y),
                                 ],
                                 egui::Stroke::new(
                                     2.0 * self.camera.zoom_level().sqrt(),
@@ -218,12 +255,13 @@ impl SeiriGraph {
                             );
 
                             // Calculate arrow direction
-                            let dir = (to_pos - from_pos).normalized();
+                            let dir = (arrow_tip - from_pos).normalized();
                             let arrow_size = 10.0 * self.camera.zoom_level().sqrt();
                             let arrow_angle: f32 = 0.5; // ~30 degrees in radians
 
                             // Calculate arrowhead points
-                            let arrow_end = to_pos - dir * (20.0 * self.camera.zoom_level().sqrt()); // Pull back from the end
+                            let arrow_end =
+                                arrow_tip - dir * (20.0 * self.camera.zoom_level().sqrt()); // Pull back from the tip
                             let left = arrow_end
                                 + arrow_size
                                     * vec2(
@@ -240,7 +278,7 @@ impl SeiriGraph {
                             // Draw arrowhead
                             painter.add(egui::Shape::convex_polygon(
                                 vec![
-                                    pos2(to_pos.x, to_pos.y),
+                                    pos2(arrow_tip.x, arrow_tip.y),
                                     pos2(left.x, left.y),
                                     pos2(right.x, right.y),
                                 ],
@@ -260,19 +298,7 @@ impl SeiriGraph {
                 .world_to_screen(self.node_positions[i].to_pos2(), canvas_rect);
 
             // Only draw visible nodes
-            let betweenness_score = self
-                .graph_analysis
-                .as_ref()
-                .and_then(|analysis| analysis.get_betweenness_centrality(NodeIndex::new(i)));
-
-            let base_radius = self.graph_nodes[i].calculate_size(
-                self.min_loc,
-                self.max_loc,
-                self.min_node_radius,
-                self.max_node_radius,
-                betweenness_score,
-            );
-            let node_radius = base_radius * self.camera.zoom_level();
+            let node_radius = self.node_screen_radius(i);
             if !canvas_rect.expand(node_radius).contains(screen_pos) {
                 continue;
             }
@@ -608,10 +634,6 @@ impl SeiriGraph {
     /// Shows things like layout types, show/hide options, and zoom level.
     fn render_controls_panel(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
-            ui.heading("Project Structure Graph");
-
-            ui.separator();
-
             ui.horizontal(|ui| {
                 ui.checkbox(&mut self.show_labels, "Show Labels");
                 ui.checkbox(&mut self.show_dependencies, "Show Dependencies");
@@ -845,13 +867,44 @@ pub fn run_gui(graph_nodes: Vec<GraphNode>) {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1200.0, 800.0])
             .with_resizable(true)
-            .with_title("seiri - Project Structure Graph"),
+            .with_title("seiri"),
         ..Default::default()
     };
 
-    let _ = eframe::run_native(
-        "seiri - Project Structure Graph",
-        native_options,
-        Box::new(|_cc| Ok(Box::new(app))),
-    );
+    let _ = eframe::run_native("seiri", native_options, Box::new(|_cc| Ok(Box::new(app))));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- edge_tip_at_node_boundary (arrows point at node edge, not center) ---
+
+    #[test]
+    fn arrow_tip_is_pulled_back_by_node_radius_along_edge_direction() {
+        let from = pos2(0.0, 0.0);
+        let to = pos2(100.0, 0.0);
+        let tip = edge_tip_at_node_boundary(from, to, 20.0);
+        assert!((tip.x - 80.0).abs() < 1e-4);
+        assert!((tip.y - 0.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn arrow_tip_scales_with_node_radius() {
+        let from = pos2(0.0, 0.0);
+        let to = pos2(0.0, 100.0);
+        let small = edge_tip_at_node_boundary(from, to, 5.0);
+        let large = edge_tip_at_node_boundary(from, to, 40.0);
+        // A larger target node should pull the arrow tip back further from center.
+        assert!(large.y < small.y);
+        assert!((small.y - 95.0).abs() < 1e-4);
+        assert!((large.y - 60.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn arrow_tip_falls_back_to_center_for_coincident_nodes() {
+        let p = pos2(10.0, 10.0);
+        let tip = edge_tip_at_node_boundary(p, p, 20.0);
+        assert_eq!(tip, p);
+    }
 }
