@@ -1,18 +1,20 @@
+//! Sugiyama graph layout. See: https://en.wikipedia.org/wiki/Layered_graph_drawing
+
 use crate::layout::Layout;
 use petgraph::Direction;
 use petgraph::graph::{Graph, NodeIndex};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 
 /// Configuration options for Sugiyama layout
 #[derive(Debug, Clone)]
 pub struct SugiyamaConfig {
-    /// Maximum number of iterations for crossing minimization
+    /// Maximum number of iterations for crossing minimization.
     pub max_iterations: usize,
-    /// Minimum horizontal distance between nodes in the same layer
+    /// Minimum horizontal distance between nodes in the same layer.
     pub node_spacing: f32,
-    /// Vertical distance between layers
+    /// Vertical distance between layers.
     pub layer_spacing: f32,
-    /// Scaling factor for the entire layout
+    /// Scaling factor for the entire layout.
     pub scale_factor: f32,
 }
 
@@ -48,7 +50,7 @@ impl LayeredNode {
     }
 }
 
-/// Sugiyama (hierarchical) layout implementation
+/// Sugiyama (hierarchical) layout implementation.
 pub struct SugiyamaLayout {
     config: SugiyamaConfig,
 }
@@ -58,11 +60,11 @@ impl SugiyamaLayout {
         Self { config }
     }
 
-    /// Create a directed acyclic graph by removing a minimal set of edges
+    /// Create a directed acyclic graph by removing a minimal set of edges.
     fn make_dag(&self, graph: &Graph<(), ()>) -> Graph<(), ()> {
         let mut dag = graph.clone();
 
-        // Find all cycles and break them
+        // find all cycles and break them
         for start_node in graph.node_indices() {
             let mut visited = HashSet::new();
             let mut path = Vec::new();
@@ -86,7 +88,7 @@ impl SugiyamaLayout {
                     if !visited.contains(&neighbor) {
                         dfs(neighbor, graph, visited, path, on_stack);
                     } else if on_stack.contains(&neighbor) {
-                        // Found a cycle, remove the last edge
+                        // found a cycle, remove the last edge
                         if let Some(&last) = path.last()
                             && let Some(edge) = graph.find_edge(last, neighbor)
                         {
@@ -107,50 +109,27 @@ impl SugiyamaLayout {
         dag
     }
 
-    /// Assign vertices to layers using longest path algorithm
+    /// Assign vertices to layers using the longest-path algorithm: each
+    /// node's layer is the maximum of `predecessor_layer + 1` over all of
+    /// its incoming edges, computed via a single pass over a topological
+    /// order of the (already acyclic) graph.
     fn assign_layers(&self, dag: &Graph<(), ()>) -> Vec<Vec<LayeredNode>> {
         let mut layers = Vec::new();
         let mut node_layers = HashMap::new();
 
-        // First pass: assign minimum layers based on longest path from a root
-        let mut queue = VecDeque::new();
-        let mut roots: Vec<_> = dag
-            .node_indices()
-            .filter(|&n| dag.neighbors_directed(n, Direction::Incoming).count() == 0)
-            .collect();
+        let topo_order = petgraph::algo::toposort(dag, None).unwrap_or_else(|_| {
+            // Should not happen since `dag` has already had its cycles broken,
+            // but fall back to insertion order rather than panicking
+            dag.node_indices().collect()
+        });
 
-        // If no roots found, use nodes with minimal incoming edges
-        if roots.is_empty() {
-            let min_in_degree = dag
-                .node_indices()
-                .map(|n| dag.neighbors_directed(n, Direction::Incoming).count())
-                .min()
-                .unwrap_or(0);
-            roots.extend(dag.node_indices().filter(|&n| {
-                dag.neighbors_directed(n, Direction::Incoming).count() == min_in_degree
-            }));
-        }
-
-        // Initialize roots to layer 0
-        for &root in &roots {
-            queue.push_back(root);
-            node_layers.insert(root, 0);
-        }
-
-        // BFS to assign layers
-        while let Some(node) = queue.pop_front() {
-            let current_layer = *node_layers.get(&node).unwrap();
-
-            for neighbor in dag.neighbors_directed(node, Direction::Outgoing) {
-                let next_layer = current_layer + 1;
-                match node_layers.get(&neighbor) {
-                    Some(&existing_layer) if existing_layer <= next_layer => continue,
-                    _ => {
-                        node_layers.insert(neighbor, next_layer);
-                        queue.push_back(neighbor);
-                    }
-                }
-            }
+        for node in topo_order {
+            let layer = dag
+                .neighbors_directed(node, Direction::Incoming)
+                .filter_map(|pred| node_layers.get(&pred))
+                .max()
+                .map_or(0, |&max_pred_layer| max_pred_layer + 1);
+            node_layers.insert(node, layer);
         }
 
         // Handle any remaining unassigned nodes (in case of disconnected components)
@@ -177,7 +156,7 @@ impl SugiyamaLayout {
         layers
     }
 
-    /// Add dummy nodes for edges that span multiple layers
+    /// Add dummy nodes for edges that span multiple layers.
     fn expand_long_edges(&self, dag: &mut Graph<(), ()>, layers: &mut [Vec<LayeredNode>]) {
         let mut new_edges = Vec::new();
         let mut dummy_nodes = Vec::new();
@@ -221,7 +200,7 @@ impl SugiyamaLayout {
         }
     }
 
-    /// Count crossings between two adjacent layers
+    /// Count crossings between two adjacent layers.
     fn count_crossings(
         &self,
         layer1: &[LayeredNode],
@@ -250,7 +229,7 @@ impl SugiyamaLayout {
         crossings
     }
 
-    /// Reduce edge crossings between layers
+    /// Reduce edge crossings between layers.
     fn reduce_crossings(&self, layers: &mut [Vec<LayeredNode>], dag: &Graph<(), ()>) {
         for _ in 0..self.config.max_iterations {
             let mut improved = false;
@@ -359,19 +338,56 @@ impl Layout for SugiyamaLayout {
             return HashMap::new();
         }
 
-        // Step 1: Make the graph acyclic
+        // step 1: make the graph acyclic
         let mut dag = self.make_dag(graph);
 
-        // Step 2: Assign vertices to layers
+        // step 2: assign vertices to layers
         let mut layers = self.assign_layers(&dag);
 
-        // Step 3: Add dummy nodes for long edges
+        // step 3: add dummy nodes for long edges
         self.expand_long_edges(&mut dag, &mut layers);
 
-        // Step 4: Reduce edge crossings
+        // step 4: reduce edge crossings
         self.reduce_crossings(&mut layers, &dag);
 
-        // Step 5: Assign coordinates
+        // step 5: assign coordinates
         self.assign_coordinates(&dag, &layers)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Diamond-shaped dependency: A->B, A->C->B. B must land in the layer
+    /// one past its deepest predecessor (C), not the layer from the first
+    /// edge visited (the direct A->B edge).
+    #[test]
+    fn assign_layers_uses_longest_path_for_diamond() {
+        let layout = SugiyamaLayout::new(SugiyamaConfig::default());
+        let mut graph: Graph<(), ()> = Graph::new();
+        let a = graph.add_node(());
+        let b = graph.add_node(());
+        let c = graph.add_node(());
+        graph.add_edge(a, b, ());
+        graph.add_edge(a, c, ());
+        graph.add_edge(c, b, ());
+
+        let layers = layout.assign_layers(&graph);
+
+        let layer_of = |id: NodeIndex| -> usize {
+            layers
+                .iter()
+                .position(|layer| layer.iter().any(|n| n.id == id))
+                .expect("node should be assigned a layer")
+        };
+
+        assert_eq!(layer_of(a), 0);
+        assert_eq!(layer_of(c), 1);
+        assert_eq!(
+            layer_of(b),
+            2,
+            "B must be promoted to layer 2 via the longer A->C->B path"
+        );
     }
 }
