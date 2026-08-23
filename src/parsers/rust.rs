@@ -5,18 +5,22 @@ use std::path::Path;
 use tree_sitter::Parser;
 use tree_sitter_rust as ts_rust;
 
-/// Get node text
+/// Get node text.
+#[inline]
 fn get_text(n: tree_sitter::Node, code: &str) -> String {
     n.utf8_text(code.as_bytes()).unwrap_or("").to_string()
 }
 
-/// Determine if an import is local (starts with crate/self/super or current mod)
+/// Determine if an import is local (starts with crate/self/super or current mod).
 fn is_local_import(import_path: &str, file_path: &Path) -> bool {
     import_path.starts_with("crate::")
         || import_path.starts_with("self::")
         || import_path.starts_with("super::")
+        || import_path == "crate"
+        || import_path == "self"
+        || import_path == "super"
         || {
-            // Also treat module-relative imports as local (e.g., modname::foo)
+            // also treat module-relative imports as local (e.g., modname::foo)
             if let Some(stem) = file_path.file_stem().and_then(|s| s.to_str()) {
                 import_path.starts_with(&format!("{stem}::"))
             } else {
@@ -25,89 +29,75 @@ fn is_local_import(import_path: &str, file_path: &Path) -> bool {
         }
 }
 
-/// Extract all import paths from a use declaration, handling use lists
+/// Extract all import paths from a use declaration, handling use lists.
 fn extract_use_paths(node: tree_sitter::Node, code: &str) -> Vec<String> {
     let mut paths = Vec::new();
-    extract_paths_from_use_clause(node, code, &mut paths);
+    if let Some(argument) = node.child_by_field_name("argument") {
+        collect_use_paths(argument, code, "", &mut paths);
+    }
     paths
 }
 
-fn parse_use_list(node: tree_sitter::Node, code: &str, _prefix: &str) -> Vec<String> {
+/// Find the first named path component inside a `use_wildcard` node (the part before `::*`).
+fn use_wildcard_prefix(node: tree_sitter::Node, code: &str) -> Option<String> {
     let mut cursor = node.walk();
-    let mut imports: Vec<String> = vec![];
-
-    for child in node.children(&mut cursor) {
-        match child.kind() {
-            "identifier" | "scoped_identifier" => {
-                imports.push(get_text(child, code));
-            }
-            "scoped_use_list" => {
-                for s in parse_scoped_use_list(child, code, "") {
-                    imports.push(s.to_string());
-                }
-            }
-            _ => {}
-        }
-    }
-
-    imports
+    node.children(&mut cursor)
+        .find(|c| c.is_named())
+        .map(|c| get_text(c, code))
 }
 
-fn parse_scoped_use_list(node: tree_sitter::Node, code: &str, prefix: &str) -> Vec<String> {
-    let mut imports: Vec<String> = vec![];
-    let mut new_prefix = prefix.to_string();
-    let mut cursor = node.walk();
-
-    for child in node.children(&mut cursor) {
-        match child.kind() {
-            "crate" | "identifier" | "scoped_identifier" => {
-                new_prefix.push_str(&(get_text(child, code) + "::"));
-            }
-            "use_list" => {
-                parse_use_list(child, code, &new_prefix)
-                    .iter()
-                    .for_each(|s| imports.push(new_prefix.clone() + s));
-            }
-            "scoped_use_list" => {
-                parse_scoped_use_list(child, code, &new_prefix)
-                    .iter()
-                    .for_each(|s| imports.push(new_prefix.clone() + s));
-            }
-            "::" => {} // skip
-            _ => {}
+/// Recursively collect import paths from a use-clause argument node, accumulating `prefix`
+/// as scopes are entered.
+fn collect_use_paths(node: tree_sitter::Node, code: &str, prefix: &str, paths: &mut Vec<String>) {
+    match node.kind() {
+        "identifier" | "crate" | "metavariable" | "scoped_identifier" => {
+            paths.push(format!("{prefix}{}", get_text(node, code)));
         }
-    }
-
-    imports
-}
-
-/// Recursively extract paths from a use clause, building up the prefix
-fn extract_paths_from_use_clause(node: tree_sitter::Node, code: &str, paths: &mut Vec<String>) {
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        match child.kind() {
-            "use" | ";" => {
-                continue;
+        "self" => {
+            // `foo::{self, bar}` imports the module `foo` itself; a bare `use self;`
+            // refers to the current module.
+            if prefix.is_empty() {
+                paths.push("self".to_string());
+            } else {
+                paths.push(prefix.trim_end_matches("::").to_string());
             }
-            "scoped_identifier" => {
-                paths.push(get_text(child, code));
+        }
+        "super" => {
+            paths.push(format!("{prefix}super"));
+        }
+        "use_wildcard" => match use_wildcard_prefix(node, code) {
+            Some(inner) => paths.push(format!("{prefix}{inner}::*")),
+            None => paths.push(format!("{prefix}*")),
+        },
+        "use_as_clause" => {
+            // Handle `foo as bar` - we want the original name (foo)
+            if let Some(path_node) = node.child_by_field_name("path") {
+                collect_use_paths(path_node, code, prefix, paths);
             }
-            "scoped_use_list" => {
-                parse_scoped_use_list(child, code, "")
-                    .iter()
-                    .for_each(|s| paths.push(s.to_string()));
-            }
-            "use_as_clause" => {
-                // Handle `foo as bar` - we want the original name (foo)
-                if let Some(import_path) = child.child(0)
-                    && (import_path.kind() == "identifier"
-                        || import_path.kind() == "scoped_identifier")
-                {
-                    paths.push(get_text(import_path, code));
+        }
+        "use_list" => {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.is_named() {
+                    collect_use_paths(child, code, prefix, paths);
                 }
             }
-            _ => {}
         }
+        "scoped_use_list" => {
+            let path_text = node
+                .child_by_field_name("path")
+                .map(|p| get_text(p, code))
+                .unwrap_or_default();
+            let new_prefix = if path_text.is_empty() {
+                prefix.to_string()
+            } else {
+                format!("{prefix}{path_text}::")
+            };
+            if let Some(list_node) = node.child_by_field_name("list") {
+                collect_use_paths(list_node, code, &new_prefix, paths);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -201,7 +191,8 @@ fn parser_loop<P: AsRef<Path>>(
     ))
 }
 
-/// Parse a Rust file and extract its structure
+/// Parse a Rust file and extract its structure. This is the main method
+/// called by the parse loop in main.rs.
 pub fn parse_rust_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
     let code = fs::read_to_string(&path).ok()?;
 
@@ -536,6 +527,63 @@ fn function2() {
         let result = parse_rust_file(&file_path).unwrap();
 
         assert_eq!(result.loc(), 13);
+    }
+
+    #[test]
+    fn test_bare_identifier_import() {
+        let temp_dir = TempDir::new().unwrap();
+        let content = r#"use foo;"#;
+        let file_path = create_test_file(&temp_dir, "test.rs", content);
+
+        let result = parse_rust_file(&file_path).unwrap();
+        let imports: Vec<_> = result.imports().iter().collect();
+
+        assert!(imports.iter().any(|i| i.path() == "foo"));
+    }
+
+    #[test]
+    fn test_wildcard_import() {
+        let temp_dir = TempDir::new().unwrap();
+        let content = r#"use std::collections::*;"#;
+        let file_path = create_test_file(&temp_dir, "test.rs", content);
+
+        let result = parse_rust_file(&file_path).unwrap();
+        let imports: Vec<_> = result.imports().iter().collect();
+
+        assert!(
+            imports
+                .iter()
+                .any(|i| i.path() == "std::collections::*" && !i.is_local())
+        );
+    }
+
+    #[test]
+    fn test_use_list_with_self() {
+        let temp_dir = TempDir::new().unwrap();
+        let content = r#"use std::io::{self, Write};"#;
+        let file_path = create_test_file(&temp_dir, "test.rs", content);
+
+        let result = parse_rust_file(&file_path).unwrap();
+        let imports: Vec<_> = result.imports().iter().collect();
+
+        assert!(imports.iter().any(|i| i.path() == "std::io"));
+        assert!(imports.iter().any(|i| i.path() == "std::io::Write"));
+    }
+
+    #[test]
+    fn test_bare_self_and_super() {
+        let temp_dir = TempDir::new().unwrap();
+        let content = r#"
+use self;
+use super;
+        "#;
+        let file_path = create_test_file(&temp_dir, "test.rs", content);
+
+        let result = parse_rust_file(&file_path).unwrap();
+        let imports: Vec<_> = result.imports().iter().collect();
+
+        assert!(imports.iter().any(|i| i.path() == "self" && i.is_local()));
+        assert!(imports.iter().any(|i| i.path() == "super" && i.is_local()));
     }
 
     #[test]
