@@ -6,6 +6,7 @@ use eframe::egui;
 use egui::{Pos2, Rect, Response, Sense, Ui, Vec2, pos2, vec2};
 use petgraph::{Graph, graph::NodeIndex};
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 mod camera;
 mod culling;
@@ -21,6 +22,31 @@ fn edge_tip_at_node_boundary(from: Pos2, to: Pos2, radius: f32) -> Pos2 {
         return to;
     }
     to - delta.normalized() * radius
+}
+
+/// Build a petgraph mirroring the real dependency edges between `graph_nodes`,
+/// resolving each edge's file path to its target's actual index rather than
+/// assuming an edge's position within its source node's edge list matches the
+/// target's index in `graph_nodes`.
+fn build_dependency_graph(graph_nodes: &[GraphNode]) -> Graph<(), ()> {
+    let mut graph = Graph::new();
+    let node_indices: Vec<NodeIndex> = graph_nodes.iter().map(|_| graph.add_node(())).collect();
+
+    let path_to_index: HashMap<&PathBuf, usize> = graph_nodes
+        .iter()
+        .enumerate()
+        .map(|(i, node)| (node.data().file(), i))
+        .collect();
+
+    for (from_idx, node) in graph_nodes.iter().enumerate() {
+        for edge_file in node.edges() {
+            if let Some(&to_idx) = path_to_index.get(edge_file) {
+                graph.add_edge(node_indices[from_idx], node_indices[to_idx], ());
+            }
+        }
+    }
+
+    graph
 }
 
 pub struct SeiriGraph {
@@ -94,21 +120,9 @@ impl SeiriGraph {
             return;
         }
 
-        // Create a graph for layout
-        let mut graph = Graph::new();
-        let mut node_indices = Vec::with_capacity(n);
-
-        // Add nodes
-        for _ in 0..n {
-            node_indices.push(graph.add_node(()));
-        }
-
-        // Add edges based on dependencies
-        for (from_idx, node) in self.graph_nodes.iter().enumerate() {
-            for (dep_idx, _edge) in node.edges().iter().enumerate() {
-                graph.add_edge(node_indices[from_idx], node_indices[dep_idx], ());
-            }
-        }
+        // Build a graph mirroring the real dependency edges for layout
+        let graph = build_dependency_graph(&self.graph_nodes);
+        let node_indices: Vec<NodeIndex> = graph.node_indices().collect();
 
         // Get layout positions
         let layout = layout::create_layout(self.layout_type);
@@ -906,5 +920,63 @@ mod tests {
         let p = pos2(10.0, 10.0);
         let tip = edge_tip_at_node_boundary(p, p, 20.0);
         assert_eq!(tip, p);
+    }
+
+    // --- build_dependency_graph (layout must see the real dependency targets) ---
+
+    use crate::core::defs::{FileNode, Language};
+
+    fn make_node(path: &str, deps: &[&str]) -> GraphNode {
+        let file_node = FileNode::new(
+            PathBuf::from(path),
+            0,
+            Language::Rust,
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+        );
+        GraphNode::new(file_node, deps.iter().map(PathBuf::from).collect())
+    }
+
+    // node 0 has a single dependency on node 2. The buggy implementation
+    // wired edges by the dependency's position within its source node's own
+    // edge list (always 0 here) rather than the target's real index, which
+    // would incorrectly self-loop node 0 instead of pointing at node 2.
+    #[test]
+    fn build_dependency_graph_resolves_edges_by_target_file_not_by_list_position() {
+        let graph_nodes = vec![
+            make_node("a.rs", &["c.rs"]),
+            make_node("b.rs", &[]),
+            make_node("c.rs", &[]),
+        ];
+
+        let graph = build_dependency_graph(&graph_nodes);
+
+        assert!(
+            graph.contains_edge(NodeIndex::new(0), NodeIndex::new(2)),
+            "edge should point at the real target (c.rs, index 2), not the edge's list position (index 0)"
+        );
+        assert!(!graph.contains_edge(NodeIndex::new(0), NodeIndex::new(0)));
+        assert_eq!(graph.edge_count(), 1);
+    }
+
+    #[test]
+    fn build_dependency_graph_resolves_multiple_edges_independently() {
+        // b depends on both a (index 0) and c (index 2); with the buggy
+        // list-position logic this would wire b->a (index 0, correct by
+        // coincidence) and b->b (index 1, wrong: should be b->c).
+        let graph_nodes = vec![
+            make_node("a.rs", &[]),
+            make_node("b.rs", &["a.rs", "c.rs"]),
+            make_node("c.rs", &[]),
+        ];
+
+        let graph = build_dependency_graph(&graph_nodes);
+
+        assert!(graph.contains_edge(NodeIndex::new(1), NodeIndex::new(0)));
+        assert!(graph.contains_edge(NodeIndex::new(1), NodeIndex::new(2)));
+        assert!(!graph.contains_edge(NodeIndex::new(1), NodeIndex::new(1)));
+        assert_eq!(graph.edge_count(), 2);
     }
 }
