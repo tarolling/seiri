@@ -1,4 +1,4 @@
-use super::LanguageResolver;
+use super::{LanguageResolver, is_within_project};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
@@ -21,14 +21,14 @@ impl PythonResolver {
 
         // 1. Check if it's a '.py' file (e.g., /root/my/module/name.py)
         potential_path.set_extension("py");
-        if potential_path.is_file() {
+        if potential_path.is_file() && is_within_project(&potential_path, &self.project_root) {
             return Some(potential_path);
         }
 
         // 2. Check if it's a package (e.g., /root/my/module/name/__init__.py)
         potential_path.set_extension(""); // Unset '.py' before joining
         let init_path = potential_path.join("__init__.py");
-        if init_path.is_file() {
+        if init_path.is_file() && is_within_project(&init_path, &self.project_root) {
             return Some(init_path);
         }
 
@@ -55,7 +55,7 @@ impl PythonResolver {
         // If module_spec is empty, we are importing the package itself (e.g., from . import foo)
         if module_spec.is_empty() {
             let init_path = base_dir.join("__init__.py");
-            return if init_path.is_file() {
+            return if init_path.is_file() && is_within_project(&init_path, &self.project_root) {
                 Some(init_path)
             } else {
                 None
@@ -68,12 +68,12 @@ impl PythonResolver {
 
         // Check for .py file or package
         target_path.set_extension("py");
-        if target_path.is_file() {
+        if target_path.is_file() && is_within_project(&target_path, &self.project_root) {
             return Some(target_path);
         }
         target_path.set_extension("");
         let init_path = target_path.join("__init__.py");
-        if init_path.is_file() {
+        if init_path.is_file() && is_within_project(&init_path, &self.project_root) {
             return Some(init_path);
         }
 
@@ -184,6 +184,22 @@ mod tests {
 
         // Relative
         let resolved = resolver.resolve_import(".non_existent", &from_file);
+        assert!(resolved.is_none());
+    }
+
+    #[test]
+    fn test_relative_import_rejects_parent_traversal() {
+        let temp_dir = TempDir::new().unwrap();
+        let project_root = temp_dir.path().join("project");
+        let package = project_root.join("api");
+        fs::create_dir_all(&package).unwrap();
+        File::create(package.join("routes.py")).unwrap();
+        File::create(temp_dir.path().join("outside.py")).unwrap();
+
+        let mut resolver = PythonResolver::new();
+        resolver.build_module_map(&[], &project_root);
+
+        let resolved = resolver.resolve_import("...outside", &package.join("routes.py"));
         assert!(resolved.is_none());
     }
 }

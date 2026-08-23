@@ -1,13 +1,16 @@
-use super::LanguageResolver;
+use super::{LanguageResolver, is_within_project};
 use crate::core::defs::Language;
 use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
 
-pub struct TypeScriptResolver;
+#[derive(Default)]
+pub struct TypeScriptResolver {
+    project_root: PathBuf,
+}
 
 impl TypeScriptResolver {
     pub fn new() -> Self {
-        Self
+        Self::default()
     }
 
     /// Resolves a relative import path into a full PathBuf
@@ -36,7 +39,7 @@ impl TypeScriptResolver {
 
         for ext in Language::TypeScript.extensions() {
             let path_with_ext = normalized_path.with_extension(ext);
-            if path_with_ext.is_file() {
+            if path_with_ext.is_file() && is_within_project(&path_with_ext, &self.project_root) {
                 return Some(path_with_ext);
             }
         }
@@ -45,7 +48,7 @@ impl TypeScriptResolver {
         if normalized_path.is_dir() {
             for ext in Language::TypeScript.extensions() {
                 let index_path = normalized_path.join(format!("index.{ext}"));
-                if index_path.is_file() {
+                if index_path.is_file() && is_within_project(&index_path, &self.project_root) {
                     return Some(index_path);
                 }
             }
@@ -56,7 +59,9 @@ impl TypeScriptResolver {
 }
 
 impl LanguageResolver for TypeScriptResolver {
-    fn build_module_map(&mut self, _files: &[PathBuf], _project_root: &Path) {}
+    fn build_module_map(&mut self, _files: &[PathBuf], project_root: &Path) {
+        self.project_root = project_root.to_path_buf();
+    }
 
     fn resolve_import(&self, import_path: &str, from_file: &Path) -> Option<PathBuf> {
         if is_local_import(import_path) {
@@ -108,7 +113,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         setup_test_project(&temp_dir);
         let root = temp_dir.path();
-        let resolver = TypeScriptResolver::new();
+        let mut resolver = TypeScriptResolver::new();
+        resolver.build_module_map(&[], root);
 
         // From `main.ts`, import a sibling file `./utils`
         let from_file = root.join("main.ts");
@@ -126,7 +132,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         setup_test_project(&temp_dir);
         let root = temp_dir.path();
-        let resolver = TypeScriptResolver::new();
+        let mut resolver = TypeScriptResolver::new();
+        resolver.build_module_map(&[], root);
         let from_file = root.join("main.ts");
 
         // Import a directory `./components`, which should resolve to `components/index.ts`
@@ -143,7 +150,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         setup_test_project(&temp_dir);
         let root = temp_dir.path();
-        let resolver = TypeScriptResolver::new();
+        let mut resolver = TypeScriptResolver::new();
+        resolver.build_module_map(&[], root);
 
         let from_file = root.join("main.ts");
         let resolved = resolver.resolve_import("./non-existent", &from_file);
@@ -151,6 +159,22 @@ mod tests {
 
         // Test non-relative path which should be ignored
         let resolved = resolver.resolve_import("react", &from_file);
+        assert!(resolved.is_none());
+    }
+
+    #[test]
+    fn test_relative_import_rejects_parent_traversal() {
+        let temp_dir = TempDir::new().unwrap();
+        let project_root = temp_dir.path().join("project");
+        let source_dir = project_root.join("src");
+        fs::create_dir_all(&source_dir).unwrap();
+        File::create(source_dir.join("main.ts")).unwrap();
+        File::create(temp_dir.path().join("outside.ts")).unwrap();
+
+        let mut resolver = TypeScriptResolver::new();
+        resolver.build_module_map(&[], &project_root);
+
+        let resolved = resolver.resolve_import("../../outside", &source_dir.join("main.ts"));
         assert!(resolved.is_none());
     }
 }
