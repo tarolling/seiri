@@ -51,4 +51,4 @@ body:
     validations:
       required: true
 description: Suggest an idea
-name: 🚀 Feature
+name: Feature

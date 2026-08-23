@@ -21,10 +21,10 @@ body:
     type: checkboxes
   - attributes:
       description: |
-        Which packages cause the failure?
+        What version/build were you using?
         Please test using latest versions.
-        Example: `some-package@1.2.3`.
-      label: Affected package
+        Example: `v1.2.3` or `latest`.
+      label: Affected version
     id: affected-versions
     type: input
     validations:
@@ -61,16 +61,6 @@ body:
     validations:
       required: true
   - attributes:
-      label: Version
-      description: |
-        What Python version are you using?
-        Please test using specified versions.
-        Example: `node@23.2.0` or `Chrome 131.0.6778.86`.
-    id: runtime
-    type: input
-    validations:
-      required: false
-  - attributes:
       description: |
         What operating system are you using?
         Please test using latest versions.
@@ -81,4 +71,4 @@ body:
     validations:
       required: false
 description: Report a bug
-name: 🐛 Bug
+name: Defect
