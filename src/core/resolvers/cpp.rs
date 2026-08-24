@@ -1,4 +1,4 @@
-use super::LanguageResolver;
+use super::{LanguageResolver, is_within_project};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -294,7 +294,7 @@ impl CppResolver {
         // Search for the include file in order of priority
         for search_dir in search_dirs {
             let candidate = search_dir.join(&normalized);
-            if candidate.exists() && candidate.is_file() {
+            if candidate.is_file() && is_within_project(&candidate, &self.project_root) {
                 return Some(candidate);
             }
 
@@ -303,7 +303,7 @@ impl CppResolver {
                 let extensions = vec![".h", ".hpp", ".hxx", ".h++", ".cc", ".cpp", ".cxx", ".c++"];
                 for ext in extensions {
                     let with_ext = search_dir.join(format!("{}{}", normalized, ext));
-                    if with_ext.exists() && with_ext.is_file() {
+                    if with_ext.is_file() && is_within_project(&with_ext, &self.project_root) {
                         return Some(with_ext);
                     }
                 }
@@ -511,6 +511,31 @@ mod tests {
         // Request without extension - resolver should find it with .hpp
         let result = resolver.find_include_file("include/helper", &source_file);
         assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_find_include_file_rejects_parent_traversal() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let project_root = temp_dir.path().join("project");
+        let source_dir = project_root.join("src");
+        fs::create_dir_all(&source_dir).expect("Failed to create source dir");
+
+        let outside_file = temp_dir.path().join("outside.h");
+        fs::write(&outside_file, "// outside").expect("Failed to write outside file");
+        let source_file = source_dir.join("main.cpp");
+        fs::write(&source_file, "#include \"../../outside.h\"")
+            .expect("Failed to write source file");
+
+        let mut resolver = CppResolver::new();
+        resolver.build_module_map(&[], &project_root);
+
+        assert_eq!(
+            resolver.find_include_file("../../outside.h", &source_file),
+            None
+        );
     }
 
     #[test]

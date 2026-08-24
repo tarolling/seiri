@@ -11,6 +11,17 @@ pub mod python;
 pub mod rust;
 pub mod typescript;
 
+fn is_within_project(candidate: &Path, project_root: &Path) -> bool {
+    let Ok(candidate) = candidate.canonicalize() else {
+        return false;
+    };
+    let Ok(project_root) = project_root.canonicalize() else {
+        return false;
+    };
+
+    candidate.starts_with(project_root)
+}
+
 /// Module resolution trait
 pub trait LanguageResolver {
     /// Build module mapping for this language
@@ -78,6 +89,7 @@ impl GraphBuilder {
                     }
                     if let Some(target_file) = resolver.resolve_import(import.path(), file_path)
                         && target_file != *file_path
+                        && node_map.contains_key(&target_file)
                         && !resolved_imports.contains(&target_file)
                     {
                         edges.push(target_file.clone());
