@@ -24,13 +24,15 @@ fn is_within_project(candidate: &Path, project_root: &Path) -> bool {
 
 /// Module resolution trait
 pub trait LanguageResolver {
-    /// Build module mapping for this language
+    /// Build module mapping for this language. This will build a map of files
+    /// to "modules", or expressions that are importable (e.g., `use crate::core`
+    /// <-> `src/core.rs`)
     fn build_module_map(&mut self, files: &[PathBuf], project_root: &Path);
 
-    /// Resolve an import path to a file path for this language
+    /// Resolve an import path to a file path for this language.
     fn resolve_import(&self, import_path: &str, from_file: &Path) -> Option<PathBuf>;
 
-    /// Get additional edges from external references
+    /// Get additional edges from external references,
     fn resolve_external_references(
         &self,
         references: &HashSet<String>,
@@ -38,7 +40,7 @@ pub trait LanguageResolver {
     ) -> Vec<PathBuf>;
 }
 
-/// Multi-language graph builder
+/// Multi-language graph builder.
 pub struct GraphBuilder {
     resolvers: HashMap<Language, Box<dyn LanguageResolver>>,
 }
@@ -53,7 +55,7 @@ impl GraphBuilder {
         Self { resolvers }
     }
 
-    /// Build graph edges for all languages
+    /// Build graph edges for all languages.
     pub fn build_graph_edges(
         &mut self,
         node_map: &HashMap<PathBuf, FileNode>,

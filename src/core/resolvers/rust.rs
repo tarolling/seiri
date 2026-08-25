@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 #[derive(Default)]
 pub struct RustResolver {
-    /// Maps module paths (like "crate::parser::rust") to actual file paths
+    /// Maps module paths (like `crate::parser::rust`) to actual file paths
     module_to_file: HashMap<String, PathBuf>,
     /// Maps file paths to their module paths
     file_to_module: HashMap<PathBuf, String>,
@@ -103,11 +103,53 @@ impl LanguageResolver for RustResolver {
     fn build_module_map(&mut self, files: &[PathBuf], project_root: &Path) {
         self.project_root = project_root.to_path_buf();
 
+        // group files by computed module path first so collisions (e.g.
+        // src/lib.rs and src/main.rs both computing to "crate") can be
+        // detected and handled
+        let mut by_module_path: HashMap<String, Vec<PathBuf>> = HashMap::new();
         for file_path in files {
             if let Some(module_path) = self.file_path_to_module_path(file_path) {
-                self.module_to_file
-                    .insert(module_path.clone(), file_path.clone());
-                self.file_to_module.insert(file_path.clone(), module_path);
+                by_module_path
+                    .entry(module_path)
+                    .or_default()
+                    .push(file_path.clone());
+            }
+        }
+
+        for (module_path, mut colliding_files) in by_module_path {
+            // majority of cases, files will not share the same module
+            if colliding_files.len() == 1 {
+                let file_path = colliding_files.remove(0);
+                self.file_to_module
+                    .insert(file_path.clone(), module_path.clone());
+                self.module_to_file.insert(module_path, file_path);
+                continue;
+            }
+
+            // multiple files computed the same module path;
+            // keep the canonical key for `lib.rs` if present, and
+            // give every other colliding file an artificial, non-colliding
+            // key derived from its own path
+            colliding_files.sort();
+            let canonical_index = colliding_files
+                .iter()
+                .position(|f| f.file_name().and_then(|n| n.to_str()) == Some("lib.rs"))
+                .unwrap_or(0);
+
+            for (i, file_path) in colliding_files.into_iter().enumerate() {
+                let key = if i == canonical_index {
+                    module_path.clone()
+                } else {
+                    eprintln!(
+                        "warning: Rust module path collision: {} resolves to `{module_path}`, \
+                         which is already used by another file; keeping it independently \
+                         resolvable under a synthetic module path",
+                        file_path.display()
+                    );
+                    format!("{module_path}$${}", file_path.display())
+                };
+                self.file_to_module.insert(file_path.clone(), key.clone());
+                self.module_to_file.insert(key, file_path);
             }
         }
     }
@@ -344,6 +386,83 @@ mod tests {
         // directly against the crate root instead of short-circuiting to `None`.
         let resolved = resolver.resolve_import("api::routes", &root.join("lib.rs"));
         assert_eq!(resolved, Some(root.join("api/routes.rs")));
+    }
+
+    #[test]
+    fn test_rust_resolver_lib_and_main_do_not_collide() {
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path();
+
+        File::create(root.join("lib.rs")).unwrap();
+        File::create(root.join("main.rs")).unwrap();
+
+        let files = vec![root.join("lib.rs"), root.join("main.rs")];
+
+        let mut resolver = RustResolver::new();
+        resolver.build_module_map(&files, root);
+
+        // lib.rs keeps the canonical "crate" module key.
+        assert_eq!(
+            resolver.file_to_module.get(&root.join("lib.rs")),
+            Some(&"crate".to_string())
+        );
+
+        // main.rs is a distinct compilation unit and must not be silently
+        // dropped from the module map by colliding with lib.rs's key.
+        assert_ne!(
+            resolver.file_to_module.get(&root.join("main.rs")),
+            resolver.file_to_module.get(&root.join("lib.rs")),
+            "lib.rs and main.rs must not be assigned the same module key"
+        );
+
+        // Each file's module key must resolve back to that same file.
+        let lib_module = resolver.file_to_module.get(&root.join("lib.rs")).unwrap();
+        let main_module = resolver.file_to_module.get(&root.join("main.rs")).unwrap();
+        assert_eq!(
+            resolver.module_to_file.get(lib_module),
+            Some(&root.join("lib.rs"))
+        );
+        assert_eq!(
+            resolver.module_to_file.get(main_module),
+            Some(&root.join("main.rs"))
+        );
+    }
+
+    #[test]
+    fn test_rust_resolver_generic_module_path_collision_keeps_both_files() {
+        // "foo.rs" and "foo/mod.rs" both normalize to the module path
+        // "crate::foo". Neither should be silently dropped from the map.
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path();
+
+        fs::create_dir_all(root.join("foo")).unwrap();
+        File::create(root.join("foo.rs")).unwrap();
+        File::create(root.join("foo/mod.rs")).unwrap();
+
+        let files = vec![root.join("foo.rs"), root.join("foo/mod.rs")];
+
+        let mut resolver = RustResolver::new();
+        resolver.build_module_map(&files, root);
+
+        assert_ne!(
+            resolver.file_to_module.get(&root.join("foo.rs")),
+            resolver.file_to_module.get(&root.join("foo/mod.rs")),
+            "colliding module paths must not be assigned the same key"
+        );
+
+        let foo_rs_module = resolver.file_to_module.get(&root.join("foo.rs")).unwrap();
+        let foo_mod_rs_module = resolver
+            .file_to_module
+            .get(&root.join("foo/mod.rs"))
+            .unwrap();
+        assert_eq!(
+            resolver.module_to_file.get(foo_rs_module),
+            Some(&root.join("foo.rs"))
+        );
+        assert_eq!(
+            resolver.module_to_file.get(foo_mod_rs_module),
+            Some(&root.join("foo/mod.rs"))
+        );
     }
 
     #[test]
