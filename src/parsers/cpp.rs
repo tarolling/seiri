@@ -1,14 +1,10 @@
 use crate::core::defs::{FileNode, Import, Language};
+use crate::parsers::get_text;
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use tree_sitter::Parser;
 use tree_sitter_cpp as ts_cpp;
-
-/// Helper function to get node text
-fn get_text(n: tree_sitter::Node, code: &str) -> String {
-    n.utf8_text(code.as_bytes()).unwrap_or("").to_string()
-}
 
 /// Determine if an include is local (quoted) vs system (angle brackets)
 #[allow(dead_code)]
