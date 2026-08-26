@@ -80,7 +80,47 @@ fn is_system_include(include_path: &str) -> bool {
     STDLIB_HEADERS.contains(&header_name)
 }
 
-/// Extract include path from #include directive
+/// Recursively resolve a function's declarator down to its name.
+///
+/// The C++ grammar wraps the name node in various declarator shapes
+/// (pointer/reference return types, template functions, etc.) and the
+/// terminal name itself may be a plain identifier, a qualified name
+/// (`ns::f`), a destructor (`~Foo`), an operator overload (`operator==`),
+/// or a conversion operator (`operator bool`, which has no name node at
+/// all — only a `type` field).
+fn extract_declarator_name(node: tree_sitter::Node, code: &str) -> Option<String> {
+    match node.kind() {
+        "identifier"
+        | "field_identifier"
+        | "qualified_identifier"
+        | "destructor_name"
+        | "operator_name" => Some(get_text(node, code)),
+        "operator_cast" => {
+            let type_node = node.child_by_field_name("type")?;
+            Some(format!("operator {}", get_text(type_node, code)))
+        }
+        "function_declarator" => {
+            extract_declarator_name(node.child_by_field_name("declarator")?, code)
+        }
+        "template_function" => extract_declarator_name(node.child_by_field_name("name")?, code),
+        // these wrapping declarators don't expose
+        // their inner declarator through a named field, so search their
+        // named children for the first one that resolves to a name
+        "pointer_declarator"
+        | "reference_declarator"
+        | "array_declarator"
+        | "parenthesized_declarator"
+        | "attributed_declarator"
+        | "structured_binding_declarator" => {
+            let mut cursor = node.walk();
+            node.named_children(&mut cursor)
+                .find_map(|child| extract_declarator_name(child, code))
+        }
+        _ => None,
+    }
+}
+
+/// Extract include path from #include directive.
 fn extract_include_path(node: tree_sitter::Node, code: &str) -> Option<(String, bool)> {
     // For #include directives, the structure is:
     // preproc_include -> string_literal or system_lib_string
@@ -193,7 +233,6 @@ pub fn parse_cpp_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
     let external_references = HashSet::new();
 
     // Traverse the syntax tree
-    let mut cursor = root_node.walk();
     let mut stack = vec![root_node];
 
     while let Some(node) = stack.pop() {
@@ -212,17 +251,10 @@ pub fn parse_cpp_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
             }
             "function_definition" => {
                 // Extract function name
-                if let Some(declarator_node) = node
-                    .children(&mut cursor)
-                    .find(|n| n.kind() == "function_declarator")
+                if let Some(declarator_node) = node.child_by_field_name("declarator")
+                    && let Some(name) = extract_declarator_name(declarator_node, &code)
                 {
-                    let mut decl_cursor = declarator_node.walk();
-                    for child in declarator_node.children(&mut decl_cursor) {
-                        if child.kind() == "identifier" {
-                            functions.insert(get_text(child, &code));
-                            break;
-                        }
-                    }
+                    functions.insert(name);
                 }
             }
             "class_specifier" | "struct_specifier" | "union_specifier" => {
@@ -367,6 +399,135 @@ void hello_world() {
         let result = parse_cpp_file(temp_file.path()).expect("Failed to parse");
         // Should extract nested includes
         assert_eq!(result.imports().len(), 2);
+    }
+
+    #[test]
+    fn test_extract_qualified_function_name() {
+        let content = r#"
+namespace ns {
+    void f();
+}
+void ns::f() {}
+"#;
+        let temp_file = create_test_file(content);
+        let result = parse_cpp_file(temp_file.path()).expect("Failed to parse");
+        assert!(
+            result.functions().contains("ns::f"),
+            "functions: {:?}",
+            result.functions()
+        );
+    }
+
+    #[test]
+    fn test_extract_destructor_name() {
+        let content = r#"
+struct Foo {
+    ~Foo();
+};
+Foo::~Foo() {}
+"#;
+        let temp_file = create_test_file(content);
+        let result = parse_cpp_file(temp_file.path()).expect("Failed to parse");
+        assert!(
+            result.functions().contains("Foo::~Foo"),
+            "functions: {:?}",
+            result.functions()
+        );
+    }
+
+    #[test]
+    fn test_extract_inline_destructor_name() {
+        let content = r#"
+struct Foo {
+    ~Foo() {}
+};
+"#;
+        let temp_file = create_test_file(content);
+        let result = parse_cpp_file(temp_file.path()).expect("Failed to parse");
+        assert!(
+            result.functions().contains("~Foo"),
+            "functions: {:?}",
+            result.functions()
+        );
+    }
+
+    #[test]
+    fn test_extract_operator_overload_name() {
+        let content = r#"
+struct Foo {
+    bool operator==(const Foo& other) const { return true; }
+};
+"#;
+        let temp_file = create_test_file(content);
+        let result = parse_cpp_file(temp_file.path()).expect("Failed to parse");
+        assert!(
+            result.functions().contains("operator=="),
+            "functions: {:?}",
+            result.functions()
+        );
+    }
+
+    #[test]
+    fn test_extract_qualified_operator_overload_name() {
+        let content = r#"
+struct Foo {
+    bool operator==(const Foo& other) const;
+};
+bool Foo::operator==(const Foo& other) const { return true; }
+"#;
+        let temp_file = create_test_file(content);
+        let result = parse_cpp_file(temp_file.path()).expect("Failed to parse");
+        assert!(
+            result.functions().contains("Foo::operator=="),
+            "functions: {:?}",
+            result.functions()
+        );
+    }
+
+    #[test]
+    fn test_extract_conversion_operator_name() {
+        let content = r#"
+struct Foo {
+    operator bool() const { return true; }
+};
+"#;
+        let temp_file = create_test_file(content);
+        let result = parse_cpp_file(temp_file.path()).expect("Failed to parse");
+        assert!(
+            result.functions().contains("operator bool"),
+            "functions: {:?}",
+            result.functions()
+        );
+    }
+
+    #[test]
+    fn test_extract_reference_wrapped_function_name() {
+        let content = r#"
+struct Foo {
+    Foo& operator=(const Foo& other) { return *this; }
+};
+"#;
+        let temp_file = create_test_file(content);
+        let result = parse_cpp_file(temp_file.path()).expect("Failed to parse");
+        assert!(
+            result.functions().contains("operator="),
+            "functions: {:?}",
+            result.functions()
+        );
+    }
+
+    #[test]
+    fn test_extract_pointer_return_function_name() {
+        let content = r#"
+int* make_int() { return nullptr; }
+"#;
+        let temp_file = create_test_file(content);
+        let result = parse_cpp_file(temp_file.path()).expect("Failed to parse");
+        assert!(
+            result.functions().contains("make_int"),
+            "functions: {:?}",
+            result.functions()
+        );
     }
 
     #[test]
