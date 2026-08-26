@@ -213,7 +213,7 @@ fn run(args: Cli) -> Result<(), String> {
     if let Some(filename) = output {
         match filename.as_str() {
             "gui" => {
-                run_gui(graph_nodes);
+                run_gui(graph_nodes).map_err(|e| format!("Failed to launch GUI: {e}"))?;
                 return Ok(());
             }
             filename if filename.ends_with(".svg") => {
@@ -252,7 +252,7 @@ fn run(args: Cli) -> Result<(), String> {
         // Default to GUI if no output specified
         #[cfg(not(test))]
         {
-            run_gui(graph_nodes);
+            run_gui(graph_nodes).map_err(|e| format!("Failed to launch GUI: {e}"))?;
         }
         return Ok(());
     }
