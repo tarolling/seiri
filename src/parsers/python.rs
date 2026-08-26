@@ -6,10 +6,9 @@ use std::path::Path;
 use tree_sitter::Parser;
 use tree_sitter_python as ts_python;
 
-/// Determine if an import is local
+/// Determine if an import is local. In Python, local imports are typically relative (starting with .) or
+/// match the project's package structure.
 fn is_local_import(import_path: &str, file_path: &Path) -> bool {
-    // In Python, local imports are typically relative (starting with .) or
-    // match the project's package structure
     if import_path.starts_with('.') {
         return true;
     }
@@ -32,7 +31,19 @@ fn is_local_import(import_path: &str, file_path: &Path) -> bool {
     false
 }
 
-/// Extract import path from an import statement
+/// Join the `identifier` children of a `dotted_name` node with `.`.
+fn dotted_name_text(node: tree_sitter::Node, code: &str) -> String {
+    let mut parts = Vec::new();
+    let mut cursor = node.walk();
+    for part in node.children(&mut cursor) {
+        if part.kind() == "identifier" {
+            parts.push(get_text(part, code));
+        }
+    }
+    parts.join(".")
+}
+
+/// Extract import path from an import statement.
 fn extract_import_path(node: tree_sitter::Node, code: &str) -> Vec<String> {
     let mut imports = Vec::new();
     let mut cursor = node.walk();
@@ -73,53 +84,56 @@ fn extract_import_path(node: tree_sitter::Node, code: &str) -> Vec<String> {
             }
         }
         "import_from_statement" => {
-            // Handle "from x.y.z import a, b, c" and "from . import x"
-            let mut from_path = String::new();
-            let mut relative_dots = 0;
+            // handle "from x.y.z import a, b, c" and "from . import x"
+            let mut dot_count = 0;
+            let mut base_path = String::new();
 
-            for child in node.children(&mut cursor) {
-                match child.kind() {
-                    "dotted_name" => {
-                        let mut parts = Vec::new();
-                        let mut name_cursor = child.walk();
-                        for name_part in child.children(&mut name_cursor) {
-                            if name_part.kind() == "identifier" {
-                                parts.push(get_text(name_part, code));
+            if let Some(module_name) = node.child_by_field_name("module_name") {
+                match module_name.kind() {
+                    "relative_import" => {
+                        let mut rel_cursor = module_name.walk();
+                        for child in module_name.children(&mut rel_cursor) {
+                            match child.kind() {
+                                "import_prefix" => {
+                                    dot_count =
+                                        get_text(child, code).chars().filter(|&c| c == '.').count();
+                                }
+                                "dotted_name" => {
+                                    base_path = dotted_name_text(child, code);
+                                }
+                                _ => {}
                             }
                         }
-                        if !parts.is_empty() {
-                            from_path = parts.join(".");
-                        }
-                        imports.push(get_text(child, code));
                     }
-                    "relative_import" => {
-                        relative_dots = child.child_count();
-                        imports.push(get_text(child, code));
-                    }
-                    "aliased_import" => {
-                        let mut name = String::new();
-                        if let Some(name_node) = child.child_by_field_name("name") {
-                            name = get_text(name_node, code);
-                        }
-
-                        let prefix = if relative_dots > 0 {
-                            ".".repeat(relative_dots)
-                        } else if !from_path.is_empty() {
-                            from_path.clone()
-                        } else {
-                            continue;
-                        };
-
-                        if !name.is_empty() {
-                            imports.push(if relative_dots > 0 {
-                                format!("{prefix}{name}")
-                            } else {
-                                prefix
-                            });
-                        }
+                    "dotted_name" => {
+                        base_path = dotted_name_text(module_name, code);
                     }
                     _ => {}
                 }
+            }
+
+            if dot_count > 0 && base_path.is_empty() {
+                // "from . import x, y" (and "from .. import x", etc.) - there is no
+                // module after the dots, so each imported name is itself a module
+                // that lives `dot_count` levels up from the current package
+                let mut name_cursor = node.walk();
+                for name_node in node.children_by_field_name("name", &mut name_cursor) {
+                    let name_text = match name_node.kind() {
+                        "dotted_name" => dotted_name_text(name_node, code),
+                        "aliased_import" => name_node
+                            .child_by_field_name("name")
+                            .map(|n| dotted_name_text(n, code))
+                            .unwrap_or_default(),
+                        _ => String::new(),
+                    };
+                    if !name_text.is_empty() {
+                        imports.push(format!("{}{}", ".".repeat(dot_count), name_text));
+                    }
+                }
+            } else if dot_count > 0 {
+                imports.push(format!("{}{}", ".".repeat(dot_count), base_path));
+            } else if !base_path.is_empty() {
+                imports.push(base_path);
             }
         }
         _ => {}
@@ -155,14 +169,7 @@ pub fn parse_python_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
                 let import_paths = extract_import_path(node, &code);
                 for import_path in import_paths {
                     let is_local = is_local_import(&import_path, path.as_ref());
-                    if is_local {
-                        imports.insert(Import::new(
-                            import_path.trim_start_matches(".").to_string(),
-                            is_local,
-                        ));
-                    } else {
-                        imports.insert(Import::new(import_path, is_local));
-                    }
+                    imports.insert(Import::new(import_path, is_local));
                 }
             }
             "function_definition" => {
@@ -252,8 +259,8 @@ from ..parent_module import another_thing
         assert!(import_paths.contains(&"sys"));
         assert!(import_paths.contains(&"pathlib"));
         assert!(import_paths.contains(&"datetime"));
-        assert!(import_paths.contains(&"local_module"));
-        assert!(import_paths.contains(&"parent_module"));
+        assert!(import_paths.contains(&".local_module"));
+        assert!(import_paths.contains(&"..parent_module"));
     }
 
     #[test]
@@ -287,8 +294,44 @@ import sys
             .collect();
 
         assert!(local_imports.contains(&"mypackage.module"));
-        assert!(local_imports.contains(&"relative_module"));
+        assert!(local_imports.contains(&".relative_module"));
         assert!(external_imports.contains(&"sys"));
+    }
+
+    #[test]
+    fn test_relative_import_dot_counting() {
+        let temp_dir = TempDir::new().unwrap();
+        let content = r#"
+from . import sibling
+from .. import cousin
+from ... import great_uncle
+from .pkg import thing
+from ..pkg.sub import other_thing
+from . import a as b
+        "#;
+        let file_path = create_test_file(&temp_dir, "test.py", content);
+
+        let result = parse_python_file(&file_path).unwrap();
+        let import_paths: Vec<_> = result.imports().iter().map(|i| i.path()).collect();
+
+        // "from . import x" has no module name, so the imported name IS the
+        // sibling module being referenced; it must not collapse to ""
+        assert!(import_paths.contains(&".sibling"));
+        assert!(!import_paths.contains(&""));
+
+        // dot count must reflect the actual number of leading dots, not the
+        // relative_import node's child count
+        assert!(import_paths.contains(&"..cousin"));
+        assert!(import_paths.contains(&"...great_uncle"));
+
+        // when a module name follows the dots, that module is the edge;
+        // imported symbol names are not appended
+        assert!(import_paths.contains(&".pkg"));
+        assert!(import_paths.contains(&"..pkg.sub"));
+
+        // aliased relative imports use the real name, not the alias
+        assert!(import_paths.contains(&".a"));
+        assert!(!import_paths.contains(&".b"));
     }
 
     #[test]
