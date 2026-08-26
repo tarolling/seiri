@@ -9,177 +9,11 @@ pub struct CppResolver {
     include_to_file: HashMap<String, PathBuf>,
     /// Project root directory
     project_root: PathBuf,
-    /// Standard library headers to exclude
-    stdlib_headers: HashSet<String>,
-    /// External library prefixes to exclude
-    external_lib_prefixes: HashSet<String>,
 }
 
 impl CppResolver {
     pub fn new() -> Self {
-        let mut resolver = Self::default();
-        resolver.init_stdlib_headers();
-        resolver.init_external_lib_prefixes();
-        resolver
-    }
-
-    fn init_stdlib_headers(&mut self) {
-        let headers = vec![
-            "iostream",
-            "fstream",
-            "sstream",
-            "iomanip",
-            "vector",
-            "list",
-            "deque",
-            "queue",
-            "stack",
-            "map",
-            "set",
-            "unordered_map",
-            "unordered_set",
-            "algorithm",
-            "numeric",
-            "functional",
-            "iterator",
-            "string",
-            "cstring",
-            "cctype",
-            "cmath",
-            "memory",
-            "utility",
-            "stdexcept",
-            "initializer_list",
-            "cassert",
-            "cerrno",
-            "cfloat",
-            "climits",
-            "cstddef",
-            "cstdint",
-            "cstdio",
-            "cstdlib",
-            "ctime",
-            "cwchar",
-            "thread",
-            "mutex",
-            "condition_variable",
-            "atomic",
-            "future",
-            "chrono",
-            "ratio",
-            "regex",
-            "random",
-            "complex",
-            "valarray",
-            "bitset",
-            "ostream",
-            "istream",
-            "streambuf",
-            "ios",
-        ];
-
-        for header in headers {
-            self.stdlib_headers.insert(header.to_string());
-        }
-    }
-
-    fn init_external_lib_prefixes(&mut self) {
-        let prefixes = vec![
-            // Boost library
-            "boost",
-            // Qt framework
-            "qt",
-            "QT",
-            "Qt",
-            // OpenGL and graphics
-            "gl",
-            "GL",
-            "glm",
-            "GLM",
-            "glfw",
-            "GLFW",
-            "sdl",
-            "SDL",
-            // CUDA and GPU
-            "cuda",
-            "CUDA",
-            "cudart",
-            // System headers
-            "sys",
-            "windows",
-            "windows.h",
-            "unistd",
-            "pthread",
-            "pthread.h",
-            "dirent",
-            "fcntl",
-            // Networking
-            "sys/socket",
-            "netinet/in",
-            "arpa/inet",
-            // Third-party libraries
-            "libxml",
-            "libcurl",
-            "curl",
-            "openssl",
-            "zlib",
-            "bzip2",
-            // Compiler specific
-            "intrin",
-            "immintrin",
-            "__builtin",
-        ];
-
-        for prefix in prefixes {
-            self.external_lib_prefixes.insert(prefix.to_string());
-        }
-    }
-
-    /// Check if a header is a standard library header
-    fn is_stdlib_header(&self, header_name: &str) -> bool {
-        let normalized = header_name
-            .trim_end_matches(".h")
-            .trim_end_matches(".hpp")
-            .trim_end_matches(".hxx");
-        self.stdlib_headers.contains(normalized)
-    }
-
-    /// Check if an include is from an external library (system or third-party)
-    fn is_external_library_include(&self, header_name: &str) -> bool {
-        let lower = header_name.to_lowercase();
-
-        // Check for known external library prefixes
-        for prefix in &self.external_lib_prefixes {
-            let prefix_lower = prefix.to_lowercase();
-            if lower.starts_with(&prefix_lower) {
-                // Check if it's actually a prefix match (followed by / or _)
-                if lower.len() > prefix_lower.len() {
-                    let next_char = &lower[prefix_lower.len()..].chars().next();
-                    if matches!(next_char, Some('/') | Some('_') | Some('.')) {
-                        return true;
-                    }
-                } else {
-                    return true;
-                }
-            }
-        }
-
-        // Check for path-like patterns common in system includes
-        if header_name.contains("sys/")
-            || header_name.contains("arpa/")
-            || header_name.contains("netinet/")
-            || header_name.contains("linux/")
-            || header_name.contains("asm/")
-        {
-            return true;
-        }
-
-        false
-    }
-
-    /// Check if an include should be filtered (not resolved as project dependency)
-    fn should_filter_include(&self, header_name: &str) -> bool {
-        self.is_stdlib_header(header_name) || self.is_external_library_include(header_name)
+        Self::default()
     }
 
     /// Normalize an include path, resolving `.` and `..` components
@@ -233,7 +67,14 @@ impl CppResolver {
         }
     }
 
-    /// Try to find a file in common include directories
+    /// Try to find a file in common include directories.
+    ///
+    /// The caller (GraphBuilder::build_graph_edges) only invokes this for
+    /// imports the parser already classified as local (quoted includes),
+    /// so we trust that classification here rather than re-filtering by
+    /// name against the stdlib/external prefix lists; a project's own
+    /// header can legitimately share a name with a stdlib/system header
+    /// (e.g. "windows.h", "string.h").
     fn find_include_file(&self, include_path: &str, from_file: &Path) -> Option<PathBuf> {
         let normalized = self.normalize_path(include_path);
 
@@ -328,15 +169,6 @@ impl LanguageResolver for CppResolver {
     }
 
     fn resolve_import(&self, import_path: &str, from_file: &Path) -> Option<PathBuf> {
-        // Note: This is an immutable reference, so we can't update cache stats.
-        // In a real implementation with RefCell, we could track cache performance.
-
-        // Check if this should be filtered (stdlib or external library)
-        if self.should_filter_include(import_path) {
-            return None; // Don't resolve system/external headers as they're external
-        }
-
-        // Try to find the include file
         self.find_include_file(import_path, from_file)
     }
 
@@ -353,15 +185,6 @@ impl LanguageResolver for CppResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_stdlib_header_detection() {
-        let resolver = CppResolver::new();
-        assert!(resolver.is_stdlib_header("iostream"));
-        assert!(resolver.is_stdlib_header("vector"));
-        assert!(resolver.is_stdlib_header("string"));
-        assert!(!resolver.is_stdlib_header("myheader"));
-    }
 
     #[test]
     fn test_path_normalization() {
@@ -539,66 +362,29 @@ mod tests {
     }
 
     #[test]
-    fn test_external_library_detection_boost() {
-        let resolver = CppResolver::new();
-        assert!(resolver.is_external_library_include("boost/algorithm.hpp"));
-        assert!(resolver.is_external_library_include("boost/shared_ptr.hpp"));
-    }
+    fn test_resolve_import_does_not_filter_local_include_with_stdlib_name() {
+        // regression test for #147: resolve_import is only ever called with
+        // imports the parser already classified as local (see
+        // GraphBuilder::build_graph_edges), so it must not re-reject a local
+        // header just because its name collides with a stdlib/external
+        // prefix (e.g. a project's own "windows.h" or "string.h")
+        use std::fs;
+        use tempfile::TempDir;
 
-    #[test]
-    fn test_external_library_detection_qt() {
-        let resolver = CppResolver::new();
-        assert!(resolver.is_external_library_include("qt/QApplication"));
-        assert!(resolver.is_external_library_include("Qt/QWidget.h"));
-        assert!(resolver.is_external_library_include("QT/QMainWindow"));
-    }
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let project_root = temp_dir.path();
 
-    #[test]
-    fn test_external_library_detection_opengl() {
-        let resolver = CppResolver::new();
-        assert!(resolver.is_external_library_include("GL/glew.h"));
-        assert!(resolver.is_external_library_include("glm/vec3.hpp"));
-        assert!(resolver.is_external_library_include("glfw/glfw3.h"));
-        assert!(resolver.is_external_library_include("SDL/SDL.h"));
-    }
+        let include_file = project_root.join("windows.h");
+        fs::write(&include_file, "// project-local windows.h")
+            .expect("Failed to write include file");
 
-    #[test]
-    fn test_external_library_detection_system() {
-        let resolver = CppResolver::new();
-        assert!(resolver.is_external_library_include("sys/socket.h"));
-        assert!(resolver.is_external_library_include("unistd.h"));
-        assert!(resolver.is_external_library_include("pthread.h"));
-        assert!(resolver.is_external_library_include("windows.h"));
-    }
+        let source_file = project_root.join("main.cpp");
+        fs::write(&source_file, "#include \"windows.h\"").expect("Failed to write source file");
 
-    #[test]
-    fn test_external_library_detection_third_party() {
-        let resolver = CppResolver::new();
-        assert!(resolver.is_external_library_include("libxml/parser.h"));
-        assert!(resolver.is_external_library_include("curl/curl.h"));
-        assert!(resolver.is_external_library_include("openssl/ssl.h"));
-        assert!(resolver.is_external_library_include("zlib.h"));
-    }
+        let mut resolver = CppResolver::new();
+        resolver.build_module_map(std::slice::from_ref(&include_file), project_root);
 
-    #[test]
-    fn test_external_library_detection_negative() {
-        let resolver = CppResolver::new();
-        assert!(!resolver.is_external_library_include("myheader.h"));
-        assert!(!resolver.is_external_library_include("utils/helper.hpp"));
-        assert!(!resolver.is_external_library_include("project/config.h"));
-    }
-
-    #[test]
-    fn test_should_filter_include() {
-        let resolver = CppResolver::new();
-        // Should filter stdlib
-        assert!(resolver.should_filter_include("iostream"));
-        assert!(resolver.should_filter_include("vector"));
-        // Should filter external libraries
-        assert!(resolver.should_filter_include("boost/shared_ptr.hpp"));
-        assert!(resolver.should_filter_include("GL/glew.h"));
-        // Should not filter project includes
-        assert!(!resolver.should_filter_include("myheader.h"));
-        assert!(!resolver.should_filter_include("utils/helper.hpp"));
+        let result = resolver.resolve_import("windows.h", &source_file);
+        assert_eq!(result, Some(include_file));
     }
 }
