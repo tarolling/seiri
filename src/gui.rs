@@ -864,12 +864,10 @@ impl eframe::App for SeiriGraph {
         egui::CentralPanel::default().show(ctx, |ui| {
             self.render_viewport(ui);
         });
-
-        ctx.request_repaint();
     }
 }
 
-pub fn run_gui(graph_nodes: Vec<GraphNode>) {
+pub fn run_gui(graph_nodes: Vec<GraphNode>) -> eframe::Result<()> {
     let app = SeiriGraph::new(graph_nodes);
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -879,7 +877,7 @@ pub fn run_gui(graph_nodes: Vec<GraphNode>) {
         ..Default::default()
     };
 
-    let _ = eframe::run_native("seiri", native_options, Box::new(|_cc| Ok(Box::new(app))));
+    eframe::run_native("seiri", native_options, Box::new(|_cc| Ok(Box::new(app))))
 }
 
 #[cfg(test)]
