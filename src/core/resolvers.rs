@@ -1,4 +1,4 @@
-use crate::core::defs::{FileNode, GraphNode, Language};
+use crate::core::defs::{FileNode, GraphNode, Import, Language};
 use crate::core::resolvers::cpp::CppResolver;
 use crate::core::resolvers::python::PythonResolver;
 use crate::core::resolvers::rust::RustResolver;
@@ -32,7 +32,7 @@ pub trait LanguageResolver {
     /// Resolve an import path to a file path for this language.
     fn resolve_import(&self, import_path: &str, from_file: &Path) -> Option<PathBuf>;
 
-    /// Get additional edges from external references,
+    /// Get additional edges from external references.
     fn resolve_external_references(
         &self,
         references: &HashSet<String>,
@@ -77,15 +77,23 @@ impl GraphBuilder {
             }
         }
 
-        // Build edges for each node
-        let mut graph_nodes = Vec::new();
-        for (file_path, node) in node_map {
+        // build edges for each node. iterate file paths in sorted order so the
+        // resulting node/edge order is deterministic
+        let mut file_paths: Vec<&PathBuf> = node_map.keys().collect();
+        file_paths.sort();
+
+        let mut graph_nodes = Vec::with_capacity(file_paths.len());
+        for file_path in file_paths {
+            let node = &node_map[file_path];
             let mut edges = Vec::new();
             let mut resolved_imports = HashSet::new();
 
             // Use language-specific resolver
             if let Some(resolver) = self.resolvers.get(node.language()) {
-                for import in node.imports() {
+                let mut imports: Vec<&Import> = node.imports().iter().collect();
+                imports.sort_by(|a, b| a.path().cmp(b.path()));
+
+                for import in imports {
                     if !import.is_local() {
                         continue; // Skip non-local imports for now
                     }
@@ -99,9 +107,9 @@ impl GraphBuilder {
                     }
                 }
 
-                // Process external references
-                let ext_refs =
+                let mut ext_refs =
                     resolver.resolve_external_references(node.external_references(), file_path);
+                ext_refs.sort(); // just in case
                 for target_file in ext_refs {
                     if target_file != *file_path && !resolved_imports.contains(&target_file) {
                         edges.push(target_file.clone());
@@ -114,5 +122,91 @@ impl GraphBuilder {
         }
 
         graph_nodes
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rust_file(path: &str, imports: &[&str]) -> (PathBuf, FileNode) {
+        let path = PathBuf::from(path);
+        let imports: HashSet<Import> = imports
+            .iter()
+            .map(|i| Import::new(i.to_string(), true))
+            .collect();
+        let node = FileNode::new(
+            path.clone(),
+            10,
+            Language::Rust,
+            imports,
+            HashSet::new(),
+            HashSet::new(),
+            HashSet::new(),
+        );
+        (path, node)
+    }
+
+    /// Regression test for issue #154: `build_graph_edges` used to iterate the
+    /// `node_map: HashMap<PathBuf, FileNode>` directly, so the resulting node
+    /// and edge order depended on HashMap iteration order rather than on the
+    /// actual project contents. Build the same logical graph twice, inserting
+    /// entries into the map in opposite orders, and assert the output is
+    /// identical (and sorted by path) either way.
+    #[test]
+    fn build_graph_edges_is_deterministic_regardless_of_node_map_insertion_order() {
+        let project_root = PathBuf::from("/project");
+
+        let files = vec![
+            rust_file("/project/src/a.rs", &["crate::b", "crate::c"]),
+            rust_file("/project/src/b.rs", &[]),
+            rust_file("/project/src/c.rs", &[]),
+            rust_file("/project/src/main.rs", &["crate::a"]),
+        ];
+
+        let mut forward: HashMap<PathBuf, FileNode> = HashMap::new();
+        for (path, node) in &files {
+            forward.insert(path.clone(), node.clone());
+        }
+
+        let mut backward: HashMap<PathBuf, FileNode> = HashMap::new();
+        for (path, node) in files.iter().rev() {
+            backward.insert(path.clone(), node.clone());
+        }
+
+        let nodes_a = GraphBuilder::new().build_graph_edges(&forward, &project_root);
+        let nodes_b = GraphBuilder::new().build_graph_edges(&backward, &project_root);
+
+        let paths_a: Vec<_> = nodes_a.iter().map(|n| n.data().file().clone()).collect();
+        let paths_b: Vec<_> = nodes_b.iter().map(|n| n.data().file().clone()).collect();
+
+        let mut sorted_paths = paths_a.clone();
+        sorted_paths.sort();
+        assert_eq!(
+            paths_a, sorted_paths,
+            "graph nodes should be ordered by file path"
+        );
+        assert_eq!(
+            paths_a, paths_b,
+            "node order must not depend on HashMap insertion order"
+        );
+
+        let edges_a: Vec<_> = nodes_a.iter().map(|n| n.edges().clone()).collect();
+        let edges_b: Vec<_> = nodes_b.iter().map(|n| n.edges().clone()).collect();
+        assert_eq!(
+            edges_a, edges_b,
+            "edge order must not depend on HashMap insertion order"
+        );
+
+        // a.rs imports crate::b then crate::c (alphabetical), so its edges
+        // should resolve in that same order.
+        let a_edges = &edges_a[0];
+        assert_eq!(
+            a_edges,
+            &vec![
+                PathBuf::from("/project/src/b.rs"),
+                PathBuf::from("/project/src/c.rs"),
+            ]
+        );
     }
 }
