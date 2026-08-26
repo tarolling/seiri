@@ -82,8 +82,7 @@ fn is_system_include(include_path: &str) -> bool {
 /// (pointer/reference return types, template functions, etc.) and the
 /// terminal name itself may be a plain identifier, a qualified name
 /// (`ns::f`), a destructor (`~Foo`), an operator overload (`operator==`),
-/// or a conversion operator (`operator bool`, which has no name node at
-/// all — only a `type` field).
+/// or a conversion operator (`operator bool`).
 fn extract_declarator_name(node: tree_sitter::Node, code: &str) -> Option<String> {
     match node.kind() {
         "identifier"
