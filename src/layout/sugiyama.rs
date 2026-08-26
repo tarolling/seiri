@@ -142,12 +142,14 @@ impl SugiyamaLayout {
             node_layers.entry(node).or_insert(0);
         }
 
-        // Group nodes by layer
+        // group nodes by layer. iterate `dag.node_indices()` rather than `node_layers` directly, so
+        // that nodes are pushed into each layer in a consistent order
         let max_layer = *node_layers.values().max().unwrap_or(&0) + 1;
         layers.resize(max_layer, Vec::new());
 
-        for (node, &layer) in &node_layers {
-            layers[layer].push(LayeredNode::new(*node, layer, false));
+        for node in dag.node_indices() {
+            let layer = node_layers[&node];
+            layers[layer].push(LayeredNode::new(node, layer, false));
         }
 
         // Sort nodes within each layer by their number of connections
@@ -415,6 +417,34 @@ mod tests {
             2,
             "B must be promoted to layer 2 via the longer A->C->B path"
         );
+    }
+
+    /// Regression test for issue #154: `assign_layers` used to push nodes
+    /// into each layer by iterating a `HashMap<NodeIndex, usize>` directly,
+    /// so same-degree nodes (which the subsequent stable sort leaves in
+    /// whatever order they were pushed) ended up in HashMap iteration order
+    /// -- different on every call, since each `HashMap::new()` gets a fresh
+    /// random hasher seed. Same-degree siblings must now come out in a
+    /// consistent order (ascending `NodeIndex`, i.e. creation order) on every
+    /// call.
+    #[test]
+    fn assign_layers_orders_same_degree_nodes_deterministically() {
+        let layout = SugiyamaLayout::new(SugiyamaConfig::default());
+        let mut graph: Graph<(), ()> = Graph::new();
+        let hub = graph.add_node(());
+        let children: Vec<_> = (0..8).map(|_| graph.add_node(())).collect();
+        for &c in &children {
+            graph.add_edge(hub, c, ());
+        }
+
+        for _ in 0..20 {
+            let layers = layout.assign_layers(&graph);
+            let child_order: Vec<_> = layers[1].iter().map(|n| n.id).collect();
+            assert_eq!(
+                child_order, children,
+                "same-degree nodes must be ordered deterministically (by creation order) across calls"
+            );
+        }
     }
 
     /// `node_spacing` is documented as "Minimum horizontal distance between
