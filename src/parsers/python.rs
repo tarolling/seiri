@@ -31,6 +31,34 @@ fn is_local_import(import_path: &str, file_path: &Path) -> bool {
     false
 }
 
+/// Recursively extract the callee/attribute path of a `call` or `attribute` node, stripping
+/// any call-argument text so e.g. `foo(1)` and `obj.method(a, b)` normalize to `foo` and
+/// `obj.method` instead of one distinct "reference" per call site/argument list.
+fn callee_text(node: tree_sitter::Node, code: &str) -> String {
+    match node.kind() {
+        "call" => node
+            .child_by_field_name("function")
+            .map(|function| callee_text(function, code))
+            .unwrap_or_default(),
+        "attribute" => {
+            let object = node
+                .child_by_field_name("object")
+                .map(|object| callee_text(object, code))
+                .unwrap_or_default();
+            let attribute = node
+                .child_by_field_name("attribute")
+                .map(|attribute| get_text(attribute, code))
+                .unwrap_or_default();
+            if object.is_empty() {
+                attribute
+            } else {
+                format!("{object}.{attribute}")
+            }
+        }
+        _ => get_text(node, code),
+    }
+}
+
 /// Join the `identifier` children of a `dotted_name` node with `.`.
 fn dotted_name_text(node: tree_sitter::Node, code: &str) -> String {
     let mut parts = Vec::new();
@@ -199,9 +227,10 @@ pub fn parse_python_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
                 }
             }
             "attribute" | "call" => {
-                // Collect external references from attribute access and function calls
-                let text = get_text(node, &code);
-                if !text.starts_with('_') {
+                // Collect external references from attribute access and function calls,
+                // normalized to the callee/attribute path with argument text stripped
+                let text = callee_text(node, &code);
+                if !text.is_empty() && !text.starts_with('_') {
                     // Only include public attributes/calls
                     external_references.insert(text);
                 }
@@ -424,6 +453,35 @@ class OuterClass:
         assert!(result.functions().contains(&"inner_method".to_string()));
         // local_function is not captured as it's a nested function
         assert!(!result.functions().contains(&"local_function".to_string()));
+    }
+
+    #[test]
+    fn test_call_references_normalize_callee() {
+        let temp_dir = TempDir::new().unwrap();
+        let content = r#"
+foo(1)
+foo(2)
+obj.method(arg)
+chained.call().another(1, 2)
+"#;
+        let file_path = create_test_file(&temp_dir, "test.py", content);
+
+        let result = parse_python_file(&file_path).unwrap();
+        let refs = result.external_references();
+
+        // calling the same function with different arguments should normalize
+        // to a single callee reference, not one entry per call site
+        assert!(refs.contains("foo"));
+        assert!(!refs.iter().any(|r| r.contains('(')));
+        assert!(!refs.contains("foo(1)"));
+        assert!(!refs.contains("foo(2)"));
+
+        // attribute-call callees normalize to the dotted attribute path
+        assert!(refs.contains("obj.method"));
+        assert!(!refs.contains("obj.method(arg)"));
+
+        // nested/chained calls strip argument text at every level
+        assert!(refs.contains("chained.call.another"));
     }
 
     #[test]
