@@ -111,7 +111,10 @@ impl GraphBuilder {
                     resolver.resolve_external_references(node.external_references(), file_path);
                 ext_refs.sort(); // just in case
                 for target_file in ext_refs {
-                    if target_file != *file_path && !resolved_imports.contains(&target_file) {
+                    if target_file != *file_path
+                        && node_map.contains_key(&target_file)
+                        && !resolved_imports.contains(&target_file)
+                    {
                         edges.push(target_file.clone());
                         resolved_imports.insert(target_file);
                     }
@@ -145,6 +148,73 @@ mod tests {
             HashSet::new(),
         );
         (path, node)
+    }
+
+    fn rust_file_with_external_refs(path: &str, external_refs: &[&str]) -> (PathBuf, FileNode) {
+        let path = PathBuf::from(path);
+        let external_references: HashSet<String> =
+            external_refs.iter().map(|r| r.to_string()).collect();
+        let node = FileNode::new(
+            path.clone(),
+            10,
+            Language::Rust,
+            HashSet::new(),
+            HashSet::new(),
+            HashSet::new(),
+            external_references,
+        );
+        (path, node)
+    }
+
+    /// Resolver stub whose `resolve_external_references` always points at a
+    /// file that was never part of the scanned `node_map` (e.g. it was
+    /// gitignored, unsupported, or failed to parse).
+    struct DanglingExternalRefResolver;
+
+    impl LanguageResolver for DanglingExternalRefResolver {
+        fn build_module_map(&mut self, _files: &[PathBuf], _project_root: &Path) {}
+
+        fn resolve_import(&self, _import_path: &str, _from_file: &Path) -> Option<PathBuf> {
+            None
+        }
+
+        fn resolve_external_references(
+            &self,
+            references: &HashSet<String>,
+            _from_file: &Path,
+        ) -> Vec<PathBuf> {
+            references
+                .iter()
+                .map(|r| PathBuf::from(format!("/project/src/{r}.rs")))
+                .collect()
+        }
+    }
+
+    /// Regression test for issue #153: `build_graph_edges` pushes resolved
+    /// external-reference targets as edges without checking they exist in
+    /// `node_map`. The equivalent check exists for regular imports but was
+    /// missing for external references, allowing dangling edges to files
+    /// that were never scanned.
+    #[test]
+    fn build_graph_edges_filters_dangling_external_reference_edges() {
+        let project_root = PathBuf::from("/project");
+
+        let (path, node) = rust_file_with_external_refs("/project/src/a.rs", &["not_in_node_map"]);
+        let mut node_map = HashMap::new();
+        node_map.insert(path, node);
+
+        let mut resolvers: HashMap<Language, Box<dyn LanguageResolver>> = HashMap::new();
+        resolvers.insert(Language::Rust, Box::new(DanglingExternalRefResolver));
+        let mut builder = GraphBuilder { resolvers };
+
+        let graph_nodes = builder.build_graph_edges(&node_map, &project_root);
+
+        assert_eq!(graph_nodes.len(), 1);
+        assert!(
+            graph_nodes[0].edges().is_empty(),
+            "edge to a file not present in node_map should have been filtered out, got: {:?}",
+            graph_nodes[0].edges()
+        );
     }
 
     /// Regression test for issue #154: `build_graph_edges` used to iterate the
