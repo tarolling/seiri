@@ -32,7 +32,7 @@ pub fn parse_typescript_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
     let mut imports = HashSet::new();
     let mut functions = HashSet::new();
     let mut containers = HashSet::new();
-    let external_references = HashSet::new();
+    let mut external_references = HashSet::new();
 
     let mut stack = vec![root_node];
 
@@ -85,6 +85,41 @@ pub fn parse_typescript_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
             | "type_alias_declaration" => {
                 if let Some(name_node) = node.child_by_field_name("name") {
                     containers.insert(get_text(name_node, &code));
+                }
+            }
+
+            // `obj.prop`, `this.field`, etc.
+            "member_expression" => {
+                external_references.insert(get_text(node, &code));
+            }
+
+            // `foo()`, `obj.method()` - record the callee, not the whole call
+            "call_expression" => {
+                if let Some(function_node) = node.child_by_field_name("function") {
+                    external_references.insert(get_text(function_node, &code));
+                }
+            }
+
+            // `new Foo()`, `new ns.Foo()`
+            "new_expression" => {
+                if let Some(constructor_node) = node.child_by_field_name("constructor") {
+                    external_references.insert(get_text(constructor_node, &code));
+                }
+            }
+
+            // `x: Foo`, `x: ns.Foo` - type references, but not the declaration's own name
+            "type_identifier" | "nested_type_identifier" => {
+                let is_declaration_name = node.parent().is_some_and(|parent| {
+                    matches!(
+                        parent.kind(),
+                        "class_declaration"
+                            | "interface_declaration"
+                            | "enum_declaration"
+                            | "type_alias_declaration"
+                    ) && parent.child_by_field_name("name") == Some(node)
+                });
+                if !is_declaration_name {
+                    external_references.insert(get_text(node, &code));
                 }
             }
 
@@ -215,6 +250,72 @@ export * from "lib-b";
         let file_path = create_test_file(&temp_dir, "test.ts", content);
         let result = parse_typescript_file(&file_path).unwrap();
         assert_eq!(result.loc(), 3);
+    }
+
+    #[test]
+    fn test_external_references_member_and_call() {
+        let temp_dir = TempDir::new().unwrap();
+        let content = r#"
+function main() {
+    myObject.myMethod();
+    otherFunc();
+}
+        "#;
+        let file_path = create_test_file(&temp_dir, "test.ts", content);
+
+        let result = parse_typescript_file(&file_path).unwrap();
+        let refs = result.external_references();
+
+        assert!(refs.contains("myObject.myMethod"));
+        assert!(refs.contains("otherFunc"));
+    }
+
+    #[test]
+    fn test_external_references_type_annotations() {
+        let temp_dir = TempDir::new().unwrap();
+        let content = r#"
+function f(x: Foo): Bar {
+    return x as unknown as Bar;
+}
+class MyClass {}
+        "#;
+        let file_path = create_test_file(&temp_dir, "test.ts", content);
+
+        let result = parse_typescript_file(&file_path).unwrap();
+        let refs = result.external_references();
+
+        assert!(refs.contains("Foo"));
+        assert!(refs.contains("Bar"));
+        // a container's own declaration name is not an external reference
+        assert!(!refs.contains("MyClass"));
+    }
+
+    #[test]
+    fn test_external_references_qualified_type() {
+        let temp_dir = TempDir::new().unwrap();
+        let content = r#"
+let x: ns.Type;
+        "#;
+        let file_path = create_test_file(&temp_dir, "test.ts", content);
+
+        let result = parse_typescript_file(&file_path).unwrap();
+        let refs = result.external_references();
+
+        assert!(refs.contains("ns.Type"));
+    }
+
+    #[test]
+    fn test_external_references_new_expression() {
+        let temp_dir = TempDir::new().unwrap();
+        let content = r#"
+const x = new Foo();
+        "#;
+        let file_path = create_test_file(&temp_dir, "test.ts", content);
+
+        let result = parse_typescript_file(&file_path).unwrap();
+        let refs = result.external_references();
+
+        assert!(refs.contains("Foo"));
     }
 
     #[test]

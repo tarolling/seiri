@@ -225,7 +225,7 @@ pub fn parse_cpp_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
     let mut imports = HashSet::new();
     let mut functions = HashSet::new();
     let mut containers = HashSet::new();
-    let external_references = HashSet::new();
+    let mut external_references = HashSet::new();
 
     // Traverse the syntax tree
     let mut stack = vec![root_node];
@@ -270,6 +270,32 @@ pub fn parse_cpp_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
                         containers.insert(get_text(child, &code));
                         break;
                     }
+                }
+            }
+            // Qualified identifiers, e.g. `ns::helper`, `Foo::method`
+            "qualified_identifier" => {
+                external_references.insert(get_text(node, &code));
+            }
+            // `foo()`, `ns::helper()` - record the callee, not the whole call
+            "call_expression" => {
+                if let Some(function_node) = node.child_by_field_name("function") {
+                    external_references.insert(get_text(function_node, &code));
+                }
+            }
+            // Type references (parameter/variable/return types, etc.), but not
+            // the declaration's own name
+            "type_identifier" => {
+                let is_declaration_name = node.parent().is_some_and(|parent| {
+                    matches!(
+                        parent.kind(),
+                        "class_specifier"
+                            | "struct_specifier"
+                            | "union_specifier"
+                            | "enum_specifier"
+                    ) && parent.child_by_field_name("name") == Some(node)
+                });
+                if !is_declaration_name {
+                    external_references.insert(get_text(node, &code));
                 }
             }
             _ => {}
@@ -523,6 +549,67 @@ int* make_int() { return nullptr; }
             "functions: {:?}",
             result.functions()
         );
+    }
+
+    #[test]
+    fn test_extract_qualified_identifier_reference() {
+        let content = r#"
+namespace ns {
+    void helper();
+}
+void caller() {
+    ns::helper();
+}
+"#;
+        let temp_file = create_test_file(content);
+        let result = parse_cpp_file(temp_file.path()).expect("Failed to parse");
+        assert!(
+            result.external_references().contains("ns::helper"),
+            "external_references: {:?}",
+            result.external_references()
+        );
+    }
+
+    #[test]
+    fn test_extract_call_target_reference() {
+        let content = r#"
+void doWork();
+void caller() {
+    doWork();
+}
+"#;
+        let temp_file = create_test_file(content);
+        let result = parse_cpp_file(temp_file.path()).expect("Failed to parse");
+        assert!(
+            result.external_references().contains("doWork"),
+            "external_references: {:?}",
+            result.external_references()
+        );
+    }
+
+    #[test]
+    fn test_extract_type_reference() {
+        let content = r#"
+struct Foo {};
+void useFoo(Foo f) {}
+"#;
+        let temp_file = create_test_file(content);
+        let result = parse_cpp_file(temp_file.path()).expect("Failed to parse");
+        assert!(
+            result.external_references().contains("Foo"),
+            "external_references: {:?}",
+            result.external_references()
+        );
+    }
+
+    #[test]
+    fn test_declaration_name_not_treated_as_external_reference() {
+        let content = r#"
+struct OnlyDeclared {};
+"#;
+        let temp_file = create_test_file(content);
+        let result = parse_cpp_file(temp_file.path()).expect("Failed to parse");
+        assert!(!result.external_references().contains("OnlyDeclared"));
     }
 
     #[test]
