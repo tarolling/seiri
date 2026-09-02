@@ -13,7 +13,18 @@ fn is_local_import(import_path: &str) -> bool {
 
 /// Extracts the import path string from an import or export statement
 fn extract_import_path(node: tree_sitter::Node, code: &str) -> Option<String> {
-    node.child_by_field_name("source")
+    let mut source_node = node.child_by_field_name("source");
+    if source_node.is_none() {
+        let mut cursor = node.walk();
+        for child in node.named_children(&mut cursor) {
+            if child.kind() == "import_require_clause" {
+                source_node = child.child_by_field_name("source");
+                break;
+            }
+        }
+    }
+
+    source_node
         .map(|source_node| get_text(source_node, code))
         .map(|path_text| path_text.trim_matches('"').trim_matches('\'').to_string())
 }
@@ -60,17 +71,17 @@ pub fn parse_typescript_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
                 }
             }
 
-            // `const myFunc = () => {}`, `let myVar = () => {}`
-            "lexical_declaration" => {
+            // `const myFunc = () => {}`, `let myVar = function() {}`,
+            // `var legacyFunc = () => {}`
+            "lexical_declaration" | "variable_declaration" => {
                 let mut cursor = node.walk();
                 for child in node.children(&mut cursor) {
                     if child.kind() != "variable_declarator" {
                         continue;
                     }
 
-                    // Check if the declarator's value is an arrow function
                     if let Some(value_node) = child.child_by_field_name("value")
-                        && value_node.kind() == "arrow_function"
+                        && matches!(value_node.kind(), "arrow_function" | "function_expression")
                         && let Some(name_node) = child.child_by_field_name("name")
                     {
                         functions.insert(get_text(name_node, &code));
@@ -188,6 +199,31 @@ import D from "lib-d"; // external
     }
 
     #[test]
+    fn test_import_require_clause() {
+        let temp_dir = TempDir::new().unwrap();
+        let content = r#"
+import local = require("./local-module");
+import external = require("external-module");
+        "#;
+        let file_path = create_test_file(&temp_dir, "test.ts", content);
+
+        let result = parse_typescript_file(&file_path).unwrap();
+        let imports = result.imports();
+
+        assert!(
+            imports
+                .iter()
+                .any(|i| i.path() == "./local-module" && i.is_local())
+        );
+        assert!(
+            imports
+                .iter()
+                .any(|i| i.path() == "external-module" && !i.is_local())
+        );
+        assert_eq!(imports.len(), 2);
+    }
+
+    #[test]
     fn test_functions_and_containers() {
         let temp_dir = TempDir::new().unwrap();
         let content = r#"
@@ -219,6 +255,23 @@ class G {
         assert!(containers.contains(&"F".to_string()));
         assert!(containers.contains(&"G".to_string()));
         assert_eq!(containers.len(), 5);
+    }
+
+    #[test]
+    fn test_var_declared_functions() {
+        let temp_dir = TempDir::new().unwrap();
+        let content = r#"
+var arrow = () => {};
+var expression = function() {};
+        "#;
+        let file_path = create_test_file(&temp_dir, "test.ts", content);
+
+        let result = parse_typescript_file(&file_path).unwrap();
+        let functions = result.functions();
+
+        assert!(functions.contains(&"arrow".to_string()));
+        assert!(functions.contains(&"expression".to_string()));
+        assert_eq!(functions.len(), 2);
     }
 
     #[test]
