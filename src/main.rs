@@ -98,7 +98,7 @@ fn detect_file_language(
     language_files: &mut HashMap<PathBuf, Language>,
     detected_langs: &mut HashSet<Language>,
 ) {
-    if let Some(file_language) = Language::from_file(target_file.to_str().unwrap()) {
+    if let Some(file_language) = Language::from_file(&target_file.to_string_lossy()) {
         language_files.insert(target_file.clone(), file_language);
         detected_langs.insert(file_language);
     }

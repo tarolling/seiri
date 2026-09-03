@@ -215,9 +215,7 @@ pub fn parse_cpp_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
     let loc = code.matches('\n').count() as u32 + 1;
 
     let mut parser = Parser::new();
-    parser
-        .set_language(&ts_cpp::LANGUAGE.into())
-        .expect("Error loading C++ grammar");
+    parser.set_language(&ts_cpp::LANGUAGE.into()).ok()?;
     let tree = parser.parse(&code, None)?;
     let root_node = tree.root_node();
 

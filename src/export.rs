@@ -115,7 +115,13 @@ pub fn export_graph_as_svg(
             .set("stroke-width", 2);
 
         // Add title for hover tooltip
-        let title = Title::new(node.data().file().file_name().unwrap().to_str().unwrap());
+        let title = Title::new(
+            node.data()
+                .file()
+                .file_name()
+                .map(|name| name.to_string_lossy())
+                .unwrap_or_default(),
+        );
         let circle_with_title = circle.add(title);
         document = document.add(circle_with_title);
 
@@ -433,14 +439,16 @@ fn draw_text(
 fn load_font() -> Result<Font, String> {
     let source = SystemSource::new();
 
-    let font_data = match source.select_by_postscript_name("Arial") {
-        Ok(handle) => handle
-            .load()
-            .map_err(|e| format!("Failed to load font: {}", e))?
-            .copy_font_data()
-            .unwrap()
-            .to_vec(),
-        Err(_) => {
+    // try Arial first; fall back to the best system sans-serif match
+    let arial_data = source
+        .select_by_postscript_name("Arial")
+        .ok()
+        .and_then(|handle| handle.load().ok())
+        .and_then(|font| font.copy_font_data());
+
+    let font_data = match arial_data {
+        Some(data) => data.to_vec(),
+        None => {
             let handle = source
                 .select_best_match(
                     &[FamilyName::SansSerif],
@@ -451,7 +459,7 @@ fn load_font() -> Result<Font, String> {
                 .load()
                 .map_err(|e| format!("Failed to load font: {}", e))?
                 .copy_font_data()
-                .unwrap()
+                .ok_or_else(|| "Failed to copy system font data".to_string())?
                 .to_vec()
         }
     };
