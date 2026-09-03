@@ -36,7 +36,7 @@ pub fn parse_typescript_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
     let mut parser = Parser::new();
     parser
         .set_language(&ts_typescript::LANGUAGE_TYPESCRIPT.into())
-        .expect("Error loading TypeScript grammar");
+        .ok()?;
     let tree = parser.parse(&code, None)?;
     let root_node = tree.root_node();
 

@@ -175,9 +175,7 @@ pub fn parse_python_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
     let loc = code.matches("\n").count() as u32 + 1; // count number of newlines bc code.lines() has failed me
 
     let mut parser = Parser::new();
-    parser
-        .set_language(&ts_python::LANGUAGE.into())
-        .expect("Error loading Python grammar");
+    parser.set_language(&ts_python::LANGUAGE.into()).ok()?;
     let tree = parser.parse(&code, None)?;
     let root_node = tree.root_node();
 
