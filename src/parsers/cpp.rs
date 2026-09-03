@@ -182,7 +182,6 @@ const MACRO_INCLUDE_PATTERNS: &[&str] = &[
 ];
 
 /// Extract includes from common macro patterns
-#[allow(dead_code)]
 fn extract_macro_includes(code: &str) -> HashSet<Import> {
     let mut includes = HashSet::new();
 
@@ -301,6 +300,8 @@ pub fn parse_cpp_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
             _ => {}
         }
     }
+
+    imports.extend(extract_macro_includes(&code));
 
     Some(FileNode::new(
         path.as_ref().to_path_buf(),
@@ -648,5 +649,29 @@ GL_INCLUDE(<gl.h>)
         let includes = extract_macro_includes(code);
         // Should not panic and return empty set for non-matching patterns
         assert!(includes.is_empty());
+    }
+
+    #[test]
+    fn test_macro_includes_merged_into_parsed_imports() {
+        let content = r#"
+BOOST_INCLUDE("utility.hpp")
+SYSTEM_INCLUDE(<vector>)
+"#;
+        let temp_file = create_test_file(content);
+        let result = parse_cpp_file(temp_file.path()).expect("Failed to parse");
+        assert!(
+            result
+                .imports()
+                .contains(&Import::new("utility.hpp".to_string(), true)),
+            "imports: {:?}",
+            result.imports()
+        );
+        assert!(
+            result
+                .imports()
+                .contains(&Import::new("vector".to_string(), false)),
+            "imports: {:?}",
+            result.imports()
+        );
     }
 }
