@@ -121,6 +121,8 @@ fn parser_loop<P: AsRef<Path>>(
                         imports.insert(Import::new(import_path, is_local));
                     }
                 }
+                // don't descend further, otherwise the same scoped_identifier/identifier nodes get re-visited
+                continue;
             }
             "mod_item" => {
                 // Handle module declarations like "pub mod python;" or "mod utils;"
@@ -151,7 +153,7 @@ fn parser_loop<P: AsRef<Path>>(
                     }
                 }
             }
-            "struct_item" | "enum_item" | "trait_item" | "impl_item" => {
+            "struct_item" | "enum_item" | "trait_item" => {
                 let mut cursor = node.walk();
                 for child in node.children(&mut cursor) {
                     if child.kind() == "type_identifier" {
@@ -159,6 +161,14 @@ fn parser_loop<P: AsRef<Path>>(
                         containers.insert(name);
                     }
                 }
+            }
+            "impl_item" => {
+                // impl target type and implemented trait name are declaration
+                // sites, not container definitions or external usages
+                if let Some(body) = node.child_by_field_name("body") {
+                    stack.push(body);
+                }
+                continue;
             }
             // For external references, look for scoped identifiers (e.g., foo::bar)
             "scoped_identifier" => {
@@ -577,6 +587,45 @@ use super;
 
         assert!(imports.iter().any(|i| i.path() == "self" && i.is_local()));
         assert!(imports.iter().any(|i| i.path() == "super" && i.is_local()));
+    }
+
+    #[test]
+    fn test_impl_trait_not_recorded_as_container() {
+        let temp_dir = TempDir::new().unwrap();
+        let content = r#"
+use std::fmt::Display;
+
+struct MyType;
+
+impl Display for MyType {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "MyType")
+    }
+}
+        "#;
+        let file_path = create_test_file(&temp_dir, "test.rs", content);
+
+        let result = parse_rust_file(&file_path).unwrap();
+        let containers: Vec<_> = result.containers().iter().collect();
+
+        assert!(containers.iter().any(|c| *c == "MyType"));
+        assert!(!containers.iter().any(|c| *c == "Display"));
+    }
+
+    #[test]
+    fn test_use_import_not_recorded_as_external_reference() {
+        let temp_dir = TempDir::new().unwrap();
+        let content = r#"
+use crate::core::defs::FileNode;
+
+fn foo() {}
+        "#;
+        let file_path = create_test_file(&temp_dir, "test.rs", content);
+
+        let result = parse_rust_file(&file_path).unwrap();
+        let refs: Vec<_> = result.external_references().iter().collect();
+
+        assert!(!refs.iter().any(|r| *r == "crate::core::defs::FileNode"));
     }
 
     #[test]
