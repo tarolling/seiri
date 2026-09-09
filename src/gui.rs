@@ -145,10 +145,12 @@ impl SeiriGraph {
         let width = max_x - min_x;
         let height = max_y - min_y;
         let target_size = 800.0; // Target layout size
-        let scale = if width > height {
-            target_size / width
+        let max_dim = width.max(height);
+        let scale = if max_dim > f32::EPSILON {
+            target_size / max_dim
         } else {
-            target_size / height
+            // in case of insignificant bounds
+            1.0
         };
 
         // Center of the layout
@@ -970,5 +972,17 @@ mod tests {
         assert!(graph.contains_edge(NodeIndex::new(1), NodeIndex::new(2)));
         assert!(!graph.contains_edge(NodeIndex::new(1), NodeIndex::new(1)));
         assert_eq!(graph.edge_count(), 2);
+    }
+
+    // --- initialize_positions (degenerate layout bounding box must not produce NaN) ---
+
+    #[test]
+    fn single_node_layout_does_not_produce_nan_positions() {
+        let graph_nodes = vec![make_node("a.rs", &[])];
+
+        let app = SeiriGraph::new(graph_nodes);
+
+        assert!(app.node_positions[0].x.is_finite());
+        assert!(app.node_positions[0].y.is_finite());
     }
 }
