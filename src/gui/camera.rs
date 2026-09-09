@@ -24,13 +24,27 @@ impl Camera {
         self.zoom_level
     }
 
+    /// True if `rect` has a non-positive or non-finite width/height.
+    #[inline]
+    fn is_degenerate_rect(rect: &Rect) -> bool {
+        !(rect.width() > 0.0 && rect.height() > 0.0)
+    }
+
     pub fn screen_to_world(&self, screen_pos: Pos2, canvas_rect: &Rect) -> Pos2 {
+        if Self::is_degenerate_rect(canvas_rect) {
+            return self.viewport.center();
+        }
+
         let adjusted_viewport = self.get_adjusted_viewport(canvas_rect);
         let canvas_to_viewport = RectTransform::from_to(*canvas_rect, adjusted_viewport);
         canvas_to_viewport.transform_pos(screen_pos)
     }
 
     pub fn world_to_screen(&self, world_pos: Pos2, canvas_rect: &Rect) -> Pos2 {
+        if Self::is_degenerate_rect(canvas_rect) {
+            return canvas_rect.center();
+        }
+
         let adjusted_viewport = self.get_adjusted_viewport(canvas_rect);
         let viewport_to_canvas = RectTransform::from_to(adjusted_viewport, *canvas_rect);
         viewport_to_canvas.transform_pos(world_pos)
@@ -38,6 +52,10 @@ impl Camera {
 
     /// adjust viewport to match canvas aspect ratio
     pub fn get_adjusted_viewport(&self, canvas_rect: &Rect) -> Rect {
+        if Self::is_degenerate_rect(canvas_rect) || Self::is_degenerate_rect(&self.viewport) {
+            return self.viewport;
+        }
+
         let canvas_aspect = canvas_rect.width() / canvas_rect.height();
         let viewport_aspect = self.viewport.width() / self.viewport.height();
 
@@ -60,6 +78,10 @@ impl Camera {
 
     #[inline]
     pub fn pan(&mut self, screen_delta: Vec2, canvas_rect: &Rect) {
+        if canvas_rect.width() <= 0.0 {
+            return;
+        }
+
         let scale = self.viewport.width() / canvas_rect.width();
 
         self.viewport = self
@@ -212,5 +234,49 @@ mod tests {
         assert!(camera.viewport.width() > 0.0);
         assert!(camera.viewport.height() > 0.0);
         assert!(camera.zoom_level() >= MIN_ZOOM_LEVEL);
+    }
+
+    #[test]
+    fn screen_to_world_with_zero_width_canvas_does_not_produce_nan() {
+        let camera = Camera::default();
+        let canvas_rect = Rect::from_min_size(Pos2::ZERO, vec2(0.0, 500.0));
+
+        let world_pos = camera.screen_to_world(canvas_rect.center(), &canvas_rect);
+
+        assert!(world_pos.x.is_finite());
+        assert!(world_pos.y.is_finite());
+    }
+
+    #[test]
+    fn world_to_screen_with_zero_height_canvas_does_not_produce_nan() {
+        let camera = Camera::default();
+        let canvas_rect = Rect::from_min_size(Pos2::ZERO, vec2(500.0, 0.0));
+
+        let screen_pos = camera.world_to_screen(camera.viewport.center(), &canvas_rect);
+
+        assert!(screen_pos.x.is_finite());
+        assert!(screen_pos.y.is_finite());
+    }
+
+    #[test]
+    fn get_adjusted_viewport_with_degenerate_canvas_returns_finite_rect() {
+        let camera = Camera::default();
+        let canvas_rect = Rect::from_min_size(Pos2::ZERO, vec2(0.0, 0.0));
+
+        let adjusted = camera.get_adjusted_viewport(&canvas_rect);
+
+        assert!(adjusted.width().is_finite());
+        assert!(adjusted.height().is_finite());
+    }
+
+    #[test]
+    fn pan_with_zero_width_canvas_is_a_no_op() {
+        let mut camera = Camera::default();
+        let canvas_rect = Rect::from_min_size(Pos2::ZERO, vec2(0.0, 500.0));
+        let viewport_before = camera.viewport;
+
+        camera.pan(vec2(50.0, 50.0), &canvas_rect);
+
+        assert_eq!(camera.viewport, viewport_before);
     }
 }
