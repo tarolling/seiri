@@ -2,7 +2,10 @@ use crate::core::defs::{GraphNode, Language};
 use font_kit::family_name::FamilyName;
 use font_kit::source::SystemSource;
 use fontdue::{Font, FontSettings};
+use image::ExtendedColorType;
+use image::codecs::jpeg::JpegEncoder;
 use std::collections::{HashMap, HashSet};
+use std::f32;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -186,6 +189,49 @@ pub fn export_graph_as_png(
         return Ok(());
     }
 
+    let pixmap = render_graph_pixmap(graph_nodes, detected_languages)?;
+    pixmap.save_png(output_path).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn export_graph_as_jpeg(
+    graph_nodes: &[GraphNode],
+    output_path: &Path,
+    detected_languages: HashSet<Language>,
+) -> Result<(), String> {
+    if graph_nodes.is_empty() {
+        return Ok(());
+    }
+
+    let pixmap = render_graph_pixmap(graph_nodes, detected_languages)?;
+
+    // jpeg encoder takes RGB so we drop alpha from pixmap
+    let rgb_data: Vec<u8> = pixmap
+        .data()
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .flat_map(|px| [px[0], px[1], px[2]])
+        .collect();
+
+    let file = File::create(output_path).map_err(|e| e.to_string())?;
+    JpegEncoder::new_with_quality(file, 100)
+        .encode(
+            &rgb_data,
+            pixmap.width(),
+            pixmap.height(),
+            ExtendedColorType::Rgb8,
+        )
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+/// Draw pixmap for PNG and JPEG exports.
+fn render_graph_pixmap(
+    graph_nodes: &[GraphNode],
+    detected_languages: HashSet<Language>,
+) -> Result<Pixmap, String> {
     let font = load_font()?;
 
     // Layout math (unchanged from SVG version)
@@ -205,9 +251,9 @@ pub fn export_graph_as_png(
         .max()
         .unwrap_or(0);
 
-    let mut positions = std::collections::HashMap::new();
+    let mut positions = HashMap::new();
     for (i, node) in graph_nodes.iter().enumerate() {
-        let angle = (i as f32) * (2.0 * std::f32::consts::PI / n as f32);
+        let angle = (i as f32) * (2.0 * f32::consts::PI / n as f32);
         let x = center_x + radius * angle.cos();
         let y = center_y + radius * angle.sin();
         positions.insert(node.data().file(), (x, y));
@@ -372,9 +418,7 @@ pub fn export_graph_as_png(
         );
     }
 
-    // Save PNG
-    pixmap.save_png(output_path).map_err(|e| e.to_string())?;
-    Ok(())
+    Ok(pixmap)
 }
 
 fn draw_text(
@@ -465,4 +509,27 @@ fn load_font() -> Result<Font, String> {
     };
 
     Ok(Font::from_bytes(font_data, FontSettings::default())?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn empty_graph_nodes_skip_file_creation() {
+        let temp_dir = TempDir::new().unwrap();
+
+        let svg_path = temp_dir.path().join("empty.svg");
+        assert!(export_graph_as_svg(&[], &svg_path, HashSet::new()).is_ok());
+        assert!(!svg_path.exists());
+
+        let png_path = temp_dir.path().join("empty.png");
+        assert!(export_graph_as_png(&[], &png_path, HashSet::new()).is_ok());
+        assert!(!png_path.exists());
+
+        let jpeg_path = temp_dir.path().join("empty.jpg");
+        assert!(export_graph_as_jpeg(&[], &jpeg_path, HashSet::new()).is_ok());
+        assert!(!jpeg_path.exists());
+    }
 }

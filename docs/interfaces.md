@@ -45,6 +45,7 @@ flowchart LR;
   nodes --> GUI;
   nodes --> PNG;
   nodes --> SVG;
+  nodes --> JPEG;
 ```
 
 ## Language-Specific Notes

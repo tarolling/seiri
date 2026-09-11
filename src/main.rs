@@ -24,7 +24,7 @@ struct Cli {
     /// Path to the project directory or file to parse
     project_path: Option<PathBuf>,
     /// Name of desired output file
-    #[arg(value_name = "gui | *.png | *.svg")]
+    #[arg(value_name = "gui | *.png | *.svg | *.jpg | *.jpeg")]
     output_filename: Option<String>,
     /// Enable verbose output
     #[arg(short, long)]
@@ -240,6 +240,20 @@ fn run(args: Cli) -> Result<(), String> {
                     detected_languages,
                 )
                 .map_err(|e| format!("Failed to export PNG: {e}"))?;
+                if verbose {
+                    println!("Successfully exported to {filename}");
+                }
+            }
+            filename if filename.ends_with(".jpg") || filename.ends_with(".jpeg") => {
+                if verbose {
+                    println!("Exporting graph to JPEG: {filename}");
+                }
+                export::export_graph_as_jpeg(
+                    &graph_nodes,
+                    &PathBuf::from(filename),
+                    detected_languages,
+                )
+                .map_err(|e| format!("Failed to export JPEG: {e}"))?;
                 if verbose {
                     println!("Successfully exported to {filename}");
                 }
@@ -623,13 +637,14 @@ mod tests {
         }
     }
 
-    /// Test T020: Verify C++ Export (SVG and PNG)
-    /// Tests that C++ graphs export correctly to SVG and PNG formats
+    /// Test T020: Verify C++ Export (SVG, PNG, and JPEG)
+    /// Tests that C++ graphs export correctly to SVG, PNG, and JPEG formats
     #[test]
     fn test_cpp_export_svg_and_png() {
         let temp_dir = TempDir::new().unwrap();
         let output_svg = temp_dir.path().join("test_output.svg");
         let output_png = temp_dir.path().join("test_output.png");
+        let output_jpeg = temp_dir.path().join("test_output.jpg");
 
         // Create a simple C++ project with dependencies
         let header_path = temp_dir.path().join("base.h");
@@ -693,7 +708,8 @@ mod tests {
         assert!(svg_content.len() > 100, "SVG content should be substantial");
 
         // Test PNG export
-        let png_result = export::export_graph_as_png(&graph_nodes, &output_png, detected_languages);
+        let png_result =
+            export::export_graph_as_png(&graph_nodes, &output_png, detected_languages.clone());
         assert!(
             png_result.is_ok(),
             "PNG export should succeed, got: {:?}",
@@ -706,6 +722,28 @@ mod tests {
         assert!(
             png_metadata.len() > 100,
             "PNG file should have substantial size"
+        );
+
+        // Test JPEG export
+        let jpeg_result =
+            export::export_graph_as_jpeg(&graph_nodes, &output_jpeg, detected_languages);
+        assert!(
+            jpeg_result.is_ok(),
+            "JPEG export should succeed, got: {:?}",
+            jpeg_result
+        );
+        assert!(output_jpeg.exists(), "JPEG output file should be created");
+
+        // Verify JPEG file has content and starts with the JPEG SOI marker
+        let jpeg_bytes = fs::read(&output_jpeg).expect("Should read JPEG file");
+        assert!(
+            jpeg_bytes.len() > 100,
+            "JPEG file should have substantial size"
+        );
+        assert_eq!(
+            &jpeg_bytes[0..2],
+            &[0xFF, 0xD8],
+            "JPEG file should start with the SOI marker"
         );
     }
 }
