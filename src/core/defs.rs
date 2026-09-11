@@ -1,6 +1,6 @@
-use once_cell::sync::Lazy;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::LazyLock;
 use tiny_skia::Color;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -25,7 +25,7 @@ impl Language {
 
     /// Try to detect the language from a file extension or config file name
     pub fn from_file(filename: &str) -> Option<Self> {
-        static EXTENSION_MAP: Lazy<HashMap<&'static str, Language>> = Lazy::new(|| {
+        static EXTENSION_MAP: LazyLock<HashMap<&'static str, Language>> = LazyLock::new(|| {
             let mut map = HashMap::new();
             for lang in &[
                 Language::Python,

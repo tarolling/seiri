@@ -3542,7 +3542,7 @@ dependencies = [
 
 [[package]]
 name = "seiri-cli"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "clap",
  "eframe",
@@ -3551,7 +3551,6 @@ dependencies = [
  "fontdue",
  "ignore",
  "image",
- "once_cell",
  "petgraph",
  "self_update",
  "svg",
@@ -3562,7 +3561,6 @@ dependencies = [
  "tree-sitter-python",
  "tree-sitter-rust",
  "tree-sitter-typescript",
- "walkdir",
 ]
 
 [[package]]
