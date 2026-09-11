@@ -208,7 +208,9 @@ pub fn export_graph_as_jpeg(
     // jpeg encoder takes RGB so we drop alpha from pixmap
     let rgb_data: Vec<u8> = pixmap
         .data()
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .flat_map(|px| [px[0], px[1], px[2]])
         .collect();
 
