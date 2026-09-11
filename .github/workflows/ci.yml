@@ -6,7 +6,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  COVERAGE_THRESHOLD: 40
+  COVERAGE_THRESHOLD: 70
 
 jobs:
   lint:
