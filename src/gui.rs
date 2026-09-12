@@ -815,55 +815,36 @@ impl SeiriGraph {
 
         self.handle_interaction(ui, &mut response, &canvas_rect);
         self.draw_graph(ui, &canvas_rect);
-
-        // Instructions overlay
-        if self.selected_node.is_none() {
-            ui.scope_builder(egui::UiBuilder::new(), |ui| {
-                ui.set_clip_rect(canvas_rect);
-                ui.allocate_space(egui::Vec2::new(
-                    canvas_rect.width() - 260.0,
-                    canvas_rect.height() - 100.0,
-                ));
-                ui.group(|ui| {
-                    ui.set_max_width(250.0);
-                    ui.label("💡 Tips:");
-                    ui.label("• Click nodes to see details");
-                    ui.label("• Drag nodes to reposition");
-                    ui.label("• Scroll to zoom");
-                    ui.label("• Drag empty space to pan");
-                });
-            });
-        }
     }
 }
 
 impl eframe::App for SeiriGraph {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         // Controls panel
-        egui::TopBottomPanel::top("controls").show(ctx, |ui| {
+        egui::Panel::top("controls").show(ui, |ui| {
             self.render_controls_panel(ui);
         });
 
         // Details panel for selected node
         if let Some(selected_idx) = self.selected_node {
-            egui::SidePanel::right("details")
+            egui::Panel::right("details")
                 .resizable(true)
-                .default_width(300.0)
-                .show(ctx, |ui| {
+                .default_size(300.0)
+                .show(ui, |ui| {
                     self.render_details_panel(ui, selected_idx);
                 });
         } else {
             // Analysis panel on the right if no node is selected
-            egui::SidePanel::right("analysis_panel")
+            egui::Panel::right("analysis_panel")
                 .resizable(true)
-                .default_width(300.0)
-                .show(ctx, |ui| {
+                .default_size(300.0)
+                .show(ui, |ui| {
                     self.render_analysis_panel(ui);
                 });
         }
 
         // Main graph view
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             self.render_viewport(ui);
         });
     }

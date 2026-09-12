@@ -26,7 +26,7 @@ pub fn run_self_update(verbose: bool) -> Result<(), String> {
         .repo_owner(REPO_OWNER)
         .repo_name(REPO_NAME)
         .bin_name(BIN_NAME)
-        .bin_path_in_archive(&bin_path_in_archive)
+        .bin_path_in_archive(bin_path_in_archive)
         .current_version(cargo_crate_version!())
         .show_download_progress(verbose)
         .build()
@@ -34,7 +34,7 @@ pub fn run_self_update(verbose: bool) -> Result<(), String> {
         .update()
         .map_err(|e| format!("Failed to update: {e}"))?;
 
-    if status.updated() {
+    if status.is_updated() {
         println!("Updated seiri to version {}.", status.version());
     } else {
         println!(
@@ -69,15 +69,16 @@ fn latest_available_version() -> Option<String> {
     let releases = ReleaseList::configure()
         .repo_owner(REPO_OWNER)
         .repo_name(REPO_NAME)
-        .with_target(self_update::get_target())
+        .filter_target(self_update::get_target())
         .build()
         .ok()?
         .fetch()
         .ok()?;
 
-    let latest = releases.first()?;
+    let latest = releases.latest()?;
 
-    is_update_available(cargo_crate_version!(), &latest.version).then(|| latest.version.clone())
+    is_update_available(cargo_crate_version!(), latest.version())
+        .then(|| latest.version().to_string())
 }
 
 fn is_update_available(current_version: &str, candidate_version: &str) -> bool {
