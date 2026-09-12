@@ -17,6 +17,7 @@ use parsers::{
     typescript::parse_typescript_file,
 };
 use std::collections::{HashMap, HashSet};
+use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
@@ -35,6 +36,9 @@ struct Cli {
     /// Ignore .gitignore files
     #[arg(long)]
     no_gitignore: bool,
+    /// Overwrite the output file without prompting if it already exists
+    #[arg(short, long)]
+    force: bool,
     /// Update the binary to the latest GitHub release
     #[arg(long)]
     update: bool,
@@ -111,6 +115,7 @@ fn run(args: Cli) -> Result<(), String> {
         verbose,
         version,
         no_gitignore,
+        force,
         update,
     } = args;
 
@@ -217,6 +222,7 @@ fn run(args: Cli) -> Result<(), String> {
                 return Ok(());
             }
             filename if filename.ends_with(".svg") => {
+                confirm_overwrite(Path::new(filename), force, &mut io::stdin().lock())?;
                 if verbose {
                     println!("Exporting graph to SVG: {filename}");
                 }
@@ -231,6 +237,7 @@ fn run(args: Cli) -> Result<(), String> {
                 }
             }
             filename if filename.ends_with(".png") => {
+                confirm_overwrite(Path::new(filename), force, &mut io::stdin().lock())?;
                 if verbose {
                     println!("Exporting graph to PNG: {filename}");
                 }
@@ -245,6 +252,7 @@ fn run(args: Cli) -> Result<(), String> {
                 }
             }
             filename if filename.ends_with(".jpg") || filename.ends_with(".jpeg") => {
+                confirm_overwrite(Path::new(filename), force, &mut io::stdin().lock())?;
                 if verbose {
                     println!("Exporting graph to JPEG: {filename}");
                 }
@@ -290,6 +298,35 @@ fn detect_project_languages(
     }
 }
 
+/// Checks whether `path` already exists and, if so, either rejects the export outright
+/// (when `force` is true, overwriting is allowed unconditionally) or asks the user to
+/// confirm the overwrite via `reader`. Returns an error if the user declines or `force`
+/// is not set and confirmation is not given.
+fn confirm_overwrite<R: BufRead>(path: &Path, force: bool, reader: &mut R) -> Result<(), String> {
+    if force || !path.exists() {
+        return Ok(());
+    }
+
+    eprint!(
+        "Warning: output file {} already exists. Overwrite? [y/N]: ",
+        path.display()
+    );
+    io::stderr().flush().map_err(|e| e.to_string())?;
+
+    let mut input = String::new();
+    reader
+        .read_line(&mut input)
+        .map_err(|e| format!("Failed to read confirmation: {e}"))?;
+
+    match input.trim().to_lowercase().as_str() {
+        "y" | "yes" => Ok(()),
+        _ => Err(format!(
+            "Aborted: not overwriting existing file {} (use --force to skip this prompt)",
+            path.display()
+        )),
+    }
+}
+
 fn walk_directory(path: &Path, no_gitignore: bool) -> Vec<PathBuf> {
     let mut paths = Vec::new();
 
@@ -330,6 +367,7 @@ mod tests {
     use super::*;
     use crate::layout::Layout;
     use std::fs;
+    use std::io::Cursor;
     use std::{fs::File, path::Path};
     use tempfile::TempDir;
 
@@ -344,6 +382,7 @@ mod tests {
             verbose: false,
             version: false,
             no_gitignore: false,
+            force: false,
             update: false,
         };
 
@@ -365,6 +404,7 @@ mod tests {
             verbose: false,
             version: false,
             no_gitignore: false,
+            force: false,
             update: false,
         };
 
@@ -383,6 +423,7 @@ mod tests {
             verbose: false,
             version: false,
             no_gitignore: false,
+            force: false,
             update: false,
         };
         let result = run(args);
@@ -396,6 +437,7 @@ mod tests {
             verbose: false,
             version: false,
             no_gitignore: false,
+            force: false,
             update: false,
         };
         let result = run(args);
@@ -414,6 +456,7 @@ mod tests {
             verbose: true,
             version: false,
             no_gitignore: false,
+            force: false,
             update: false,
         };
 
@@ -429,6 +472,71 @@ mod tests {
         assert!(args.update);
         assert!(args.project_path.is_none());
         assert!(args.validate().is_ok());
+    }
+
+    #[test]
+    fn test_force_flag_parses() {
+        let args = Cli::try_parse_from(["seiri", "--force"]).unwrap();
+        assert!(args.force);
+
+        let args = Cli::try_parse_from(["seiri", "-f"]).unwrap();
+        assert!(args.force);
+
+        let args = Cli::try_parse_from(["seiri"]).unwrap();
+        assert!(!args.force);
+    }
+
+    #[test]
+    fn test_confirm_overwrite_allows_nonexistent_path() {
+        let temp_dir = TempDir::new().unwrap();
+        let output_path = temp_dir.path().join("does_not_exist.svg");
+        let mut reader = Cursor::new(Vec::new());
+
+        assert!(confirm_overwrite(&output_path, false, &mut reader).is_ok());
+    }
+
+    #[test]
+    fn test_confirm_overwrite_force_skips_prompt() {
+        let temp_dir = TempDir::new().unwrap();
+        let output_path = temp_dir.path().join("existing.svg");
+        File::create(&output_path).unwrap();
+        // empty reader: if force didn't short-circuit, read_line would return an empty
+        // string, which is treated as "no" and would cause an error
+        let mut reader = Cursor::new(Vec::new());
+
+        assert!(confirm_overwrite(&output_path, true, &mut reader).is_ok());
+    }
+
+    #[test]
+    fn test_confirm_overwrite_prompt_accepts_yes() {
+        let temp_dir = TempDir::new().unwrap();
+        let output_path = temp_dir.path().join("existing.svg");
+        File::create(&output_path).unwrap();
+        let mut reader = Cursor::new(b"y\n".to_vec());
+
+        assert!(confirm_overwrite(&output_path, false, &mut reader).is_ok());
+    }
+
+    #[test]
+    fn test_confirm_overwrite_prompt_rejects_no() {
+        let temp_dir = TempDir::new().unwrap();
+        let output_path = temp_dir.path().join("existing.svg");
+        File::create(&output_path).unwrap();
+        let mut reader = Cursor::new(b"n\n".to_vec());
+
+        let result = confirm_overwrite(&output_path, false, &mut reader);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Aborted"));
+    }
+
+    #[test]
+    fn test_confirm_overwrite_prompt_defaults_to_no() {
+        let temp_dir = TempDir::new().unwrap();
+        let output_path = temp_dir.path().join("existing.svg");
+        File::create(&output_path).unwrap();
+        let mut reader = Cursor::new(b"\n".to_vec());
+
+        assert!(confirm_overwrite(&output_path, false, &mut reader).is_err());
     }
 
     #[test]
