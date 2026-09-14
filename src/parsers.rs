@@ -42,10 +42,11 @@ pub fn parse_all_sequential(
 
 /// Parses every detected file across rayon's thread pool.
 ///
-/// `on_file_parsed` runs on the worker thread that finished each file, so a
-/// caller can advance a progress bar without any worker printing for itself.
-/// Each parser constructs its own `tree_sitter::Parser` and nothing else is
-/// shared, so the calls are safe to run concurrently.
+/// `on_file_parsed` runs on the worker thread that successfully finished
+/// parsing a file, so a caller can advance a progress bar without any
+/// worker printing for itself. Each parser constructs its own
+/// `tree_sitter::Parser` and nothing else is shared, so the calls are
+/// safe to run concurrently.
 pub fn parse_all_parallel<F>(
     language_files: &HashMap<PathBuf, Language>,
     on_file_parsed: F,
@@ -57,8 +58,10 @@ where
         .par_iter()
         .filter_map(|(path, &language)| {
             let node = parse_file(path, language);
-            on_file_parsed();
-            node.map(|node| (path.clone(), node))
+            node.map(|node| {
+                on_file_parsed();
+                (path.clone(), node)
+            })
         })
         .collect()
 }
