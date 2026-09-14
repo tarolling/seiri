@@ -6,10 +6,12 @@ use crate::core::resolvers::typescript::TypeScriptResolver;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-pub mod cpp;
-pub mod python;
-pub mod rust;
-pub mod typescript;
+// Per-language resolvers are implementation details of `GraphBuilder`, which is
+// the only thing that drives them.
+pub(crate) mod cpp;
+pub(crate) mod python;
+pub(crate) mod rust;
+pub(crate) mod typescript;
 
 fn is_within_project(candidate: &Path, project_root: &Path) -> bool {
     let Ok(candidate) = candidate.canonicalize() else {
@@ -43,6 +45,12 @@ pub trait LanguageResolver {
 /// Multi-language graph builder.
 pub struct GraphBuilder {
     resolvers: HashMap<Language, Box<dyn LanguageResolver>>,
+}
+
+impl Default for GraphBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl GraphBuilder {
