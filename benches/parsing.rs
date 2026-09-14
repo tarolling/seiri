@@ -146,16 +146,17 @@ options:
 
 fn parse_args() -> Result<Config, String> {
     let mut config = Config::default();
-    let mut args = std::env::args().skip(1);
+    let args: Vec<String> = std::env::args().skip(1).collect();
 
-    while let Some(arg) = args.next() {
+    let mut iter = args.into_iter();
+    while let Some(arg) = iter.next() {
         match arg.as_str() {
             "-h" | "--help" => {
                 println!("{}", usage());
                 std::process::exit(0);
             }
             "--rust" | "--python" | "--typescript" | "--cpp" => {
-                let value = args.next().ok_or_else(|| format!("`{arg}` needs a path"))?;
+                let value = iter.next().ok_or_else(|| format!("`{arg}` needs a path"))?;
                 let language = match arg.as_str() {
                     "--rust" => Language::Rust,
                     "--python" => Language::Python,
@@ -165,13 +166,13 @@ fn parse_args() -> Result<Config, String> {
                 config.real_paths.insert(language, real_path(value)?);
             }
             "--files" => {
-                let value = args
+                let value = iter
                     .next()
                     .ok_or_else(|| "`--files` needs a value".to_string())?;
                 config.files = positive(value, "--files")?;
             }
             "--iters" => {
-                let value = args
+                let value = iter
                     .next()
                     .ok_or_else(|| "`--iters` needs a value".to_string())?;
                 config.iterations = positive(value, "--iters")?;
