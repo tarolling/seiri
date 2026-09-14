@@ -76,11 +76,14 @@ jobs:
       run: |
         cargo tarpaulin --verbose --all-features --workspace --timeout 120 \
           --exclude-files src/main.rs \
+          --exclude-files 'benches/*' \
           --out xml --output-dir coverage
 
     - name: Check coverage threshold
       run: |
-        COVERAGE=$(cargo tarpaulin --all-features --workspace --timeout 120 --exclude-files src/main.rs | grep -oP '\K[0-9.]+% coverage')
+        COVERAGE=$(cargo tarpaulin --all-features --workspace --timeout 120 \
+          --exclude-files src/main.rs --exclude-files 'benches/*' \
+          | grep -oP '\K[0-9.]+% coverage')
         echo "Current coverage: ${COVERAGE}%"
         echo "Required coverage: ${COVERAGE_THRESHOLD}%"
         if (( $(echo "${COVERAGE} < ${COVERAGE_THRESHOLD}" | bc -l) )); then

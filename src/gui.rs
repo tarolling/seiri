@@ -49,8 +49,25 @@ fn build_dependency_graph(graph_nodes: &[GraphNode]) -> Graph<(), ()> {
     graph
 }
 
+/// Maps every node's file path to its index in `graph_nodes`.
+///
+/// Owning `PathBuf` keys (rather than borrowing them) keeps `SeiriGraph` free of
+/// a lifetime parameter; the clone is cheap because `PathBuf`'s buffer is
+/// reference counted.
+fn index_nodes_by_file(graph_nodes: &[GraphNode]) -> HashMap<PathBuf, usize> {
+    let mut index = HashMap::with_capacity(graph_nodes.len());
+    for (i, node) in graph_nodes.iter().enumerate() {
+        index.entry(node.data().file().clone()).or_insert(i);
+    }
+    index
+}
+
 pub struct SeiriGraph {
     pub graph_nodes: Vec<GraphNode>,
+
+    // File path -> index into `graph_nodes`, so edge targets resolve in O(1)
+    // instead of scanning every node for each edge drawn.
+    file_to_index: HashMap<PathBuf, usize>,
 
     // View state
     camera_pos: Vec2,
@@ -94,8 +111,11 @@ impl SeiriGraph {
             .max()
             .unwrap_or(0);
 
+        let file_to_index = index_nodes_by_file(&graph_nodes);
+
         let mut app = Self {
             graph_nodes,
+            file_to_index,
             camera_pos: Vec2::ZERO,
             camera: Camera::default(),
             node_positions: vec![Vec2::ZERO; n],
@@ -233,11 +253,7 @@ impl SeiriGraph {
                     .world_to_screen(self.node_positions[i].to_pos2(), canvas_rect);
 
                 for edge_file in node.edges() {
-                    if let Some(j) = self
-                        .graph_nodes
-                        .iter()
-                        .position(|n| n.data().file() == edge_file)
-                    {
+                    if let Some(&j) = self.file_to_index.get(edge_file) {
                         let to_pos = self
                             .camera
                             .world_to_screen(self.node_positions[j].to_pos2(), canvas_rect);
@@ -733,11 +749,7 @@ impl SeiriGraph {
 
             ui.collapsing(format!("Outgoing ({})", outgoing.len()), |ui| {
                 for edge in outgoing {
-                    if let Some(idx) = self
-                        .graph_nodes
-                        .iter()
-                        .position(|n| n.data().file() == edge)
-                    {
+                    if let Some(&idx) = self.file_to_index.get(edge) {
                         let name = edge
                             .file_name()
                             .and_then(|n| n.to_str())
@@ -953,6 +965,49 @@ mod tests {
         assert!(graph.contains_edge(NodeIndex::new(1), NodeIndex::new(2)));
         assert!(!graph.contains_edge(NodeIndex::new(1), NodeIndex::new(1)));
         assert_eq!(graph.edge_count(), 2);
+    }
+
+    // --- file_to_index (edge drawing must resolve targets without scanning nodes) ---
+
+    #[test]
+    fn file_to_index_indexes_every_node_and_resolves_every_edge_target() {
+        let graph_nodes = vec![
+            make_node("a.rs", &["c.rs"]),
+            make_node("b.rs", &["a.rs", "c.rs"]),
+            make_node("c.rs", &[]),
+        ];
+
+        let app = SeiriGraph::new(graph_nodes);
+
+        assert_eq!(app.file_to_index.len(), app.graph_nodes.len());
+        for (i, node) in app.graph_nodes.iter().enumerate() {
+            assert_eq!(
+                app.file_to_index.get(node.data().file()),
+                Some(&i),
+                "{} should map to index {i}",
+                node.data().file().display()
+            );
+        }
+
+        // Every edge must resolve to the node whose file it names, matching what
+        // the old linear scan produced.
+        for node in &app.graph_nodes {
+            for edge in node.edges() {
+                let target = app
+                    .file_to_index
+                    .get(edge)
+                    .copied()
+                    .unwrap_or_else(|| panic!("{} is not indexed", edge.display()));
+                assert_eq!(app.graph_nodes[target].data().file(), edge);
+            }
+        }
+    }
+
+    #[test]
+    fn file_to_index_is_empty_for_no_nodes() {
+        let app = SeiriGraph::new(Vec::new());
+
+        assert!(app.file_to_index.is_empty());
     }
 
     // --- initialize_positions (degenerate layout bounding box must not produce NaN) ---

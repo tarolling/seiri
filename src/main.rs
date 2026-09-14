@@ -1,24 +1,19 @@
-mod gui;
-use gui::run_gui;
-
-mod analysis;
-mod core;
-mod export;
-mod layout;
-mod parsers;
-mod update;
-
 use clap::{Parser, crate_name, crate_version};
-use core::defs::{FileNode, Language};
-use core::resolvers::GraphBuilder;
-use ignore::WalkBuilder;
-use parsers::{
-    cpp::parse_cpp_file, python::parse_python_file, rust::parse_rust_file,
-    typescript::parse_typescript_file,
-};
-use std::collections::{HashMap, HashSet};
+use indicatif::{ProgressBar, ProgressStyle};
+use seiri_cli::core::defs::{FileNode, Language};
+use seiri_cli::core::resolvers::GraphBuilder;
+use seiri_cli::discovery::{detect_project_languages, walk_directory};
+use seiri_cli::export;
+use seiri_cli::gui::run_gui;
+use seiri_cli::parsers;
+use seiri_cli::update;
+use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
+
+/// Projects at or below this many files parse faster than a progress bar is
+/// worth drawing.
+const PROGRESS_BAR_MIN_FILES: usize = 10;
 
 #[derive(Parser)]
 struct Cli {
@@ -97,15 +92,46 @@ fn main() {
     }
 }
 
-fn detect_file_language(
-    target_file: PathBuf,
-    language_files: &mut HashMap<PathBuf, Language>,
-    detected_langs: &mut HashSet<Language>,
-) {
-    if let Some(file_language) = Language::from_file(&target_file.to_string_lossy()) {
-        language_files.insert(target_file.clone(), file_language);
-        detected_langs.insert(file_language);
+/// Parses every detected file in parallel, returning the successfully parsed
+/// files indexed by path.
+///
+/// A progress bar is shown unless `verbose` is set or the project is too small
+/// for one to be worth drawing; `verbose` instead prints the sorted list of
+/// parsed files once the parse has finished, since printing from worker threads
+/// would interleave lines mid-write.
+fn parse_project_files(
+    language_files: &HashMap<PathBuf, Language>,
+    verbose: bool,
+) -> HashMap<PathBuf, FileNode> {
+    let progress = if !verbose && language_files.len() > PROGRESS_BAR_MIN_FILES {
+        let bar = ProgressBar::new(language_files.len() as u64);
+        bar.set_style(
+            ProgressStyle::default_bar()
+                .template("{spinner:.green} [{bar:40.cyan/blue}] {pos}/{len} {elapsed}")
+                .expect("progress bar template is valid"),
+        );
+        bar
+    } else {
+        // A hidden bar keeps this branch-free: advancing it is a no-op.
+        ProgressBar::hidden()
+    };
+
+    let node_map = parsers::parse_all_parallel(language_files, || progress.inc(1));
+    progress.finish_with_message("parsing complete");
+
+    if verbose {
+        let mut parsed_paths: Vec<&PathBuf> = node_map.keys().collect();
+        parsed_paths.sort();
+        for path in parsed_paths {
+            let language = language_files
+                .get(path)
+                .map(Language::to_string)
+                .unwrap_or("unknown");
+            eprintln!("Parsed {language} file: {}", path.display());
+        }
     }
+
+    node_map
 }
 
 fn run(args: Cli) -> Result<(), String> {
@@ -149,43 +175,7 @@ fn run(args: Cli) -> Result<(), String> {
         .ok_or_else(|| "No supported language files found in the project".to_string())?;
 
     // Parse files and collect Nodes, indexed by file path
-    let mut node_map: HashMap<PathBuf, FileNode> = HashMap::new();
-    for (file_path, lang) in &language_files {
-        match lang {
-            Language::Python => {
-                if let Some(node) = parse_python_file(file_path) {
-                    if verbose {
-                        println!("Parsed Python file: {}", file_path.display());
-                    }
-                    node_map.insert(file_path.clone(), node);
-                }
-            }
-            Language::Rust => {
-                if let Some(node) = parse_rust_file(file_path) {
-                    if verbose {
-                        println!("Parsed Rust file: {}", file_path.display());
-                    }
-                    node_map.insert(file_path.clone(), node);
-                }
-            }
-            Language::TypeScript => {
-                if let Some(node) = parse_typescript_file(file_path) {
-                    if verbose {
-                        println!("Parsed TypeScript file: {}", file_path.display());
-                    }
-                    node_map.insert(file_path.clone(), node);
-                }
-            }
-            Language::Cpp => {
-                if let Some(node) = parse_cpp_file(file_path) {
-                    if verbose {
-                        println!("Parsed C++ file: {}", file_path.display());
-                    }
-                    node_map.insert(file_path.clone(), node);
-                }
-            }
-        }
-    }
+    let node_map = parse_project_files(&language_files, verbose);
 
     // Build GraphNodes with multi-language support
     let mut graph_builder = GraphBuilder::new();
@@ -282,22 +272,6 @@ fn run(args: Cli) -> Result<(), String> {
     Ok(())
 }
 
-fn detect_project_languages(
-    files_to_process: &[PathBuf],
-    language_files: &mut HashMap<PathBuf, Language>,
-) -> Option<HashSet<Language>> {
-    let mut detected: HashSet<Language> = HashSet::new();
-    files_to_process
-        .iter()
-        .for_each(|entry| detect_file_language(entry.to_path_buf(), language_files, &mut detected));
-
-    if detected.is_empty() {
-        None
-    } else {
-        Some(detected)
-    }
-}
-
 /// Checks whether `path` already exists and, if so, either rejects the export outright
 /// (when `force` is true, overwriting is allowed unconditionally) or asks the user to
 /// confirm the overwrite via `reader`. Returns an error if the user declines or `force`
@@ -327,48 +301,14 @@ fn confirm_overwrite<R: BufRead>(path: &Path, force: bool, reader: &mut R) -> Re
     }
 }
 
-fn walk_directory(path: &Path, no_gitignore: bool) -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-
-    let mut builder = WalkBuilder::new(path);
-    if no_gitignore {
-        builder
-            .git_ignore(false)
-            .git_exclude(false)
-            .git_global(false)
-            .ignore(false);
-    } else {
-        // for most/all projects, gitignore and other ignore files will be automatically detected by ignore crate
-        // but they don't when using tempfile and/or when running tests
-        let gitignore_path = path.join(".gitignore");
-        if gitignore_path.exists() {
-            builder.add_ignore(gitignore_path);
-        }
-    }
-
-    for result in builder.build() {
-        match result {
-            Ok(entry) => {
-                if let Some(file_type) = entry.file_type()
-                    && file_type.is_file()
-                {
-                    paths.push(entry.path().to_path_buf());
-                }
-            }
-            Err(msg) => eprintln!("Error reading entry: {msg}"),
-        }
-    }
-
-    paths
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layout::Layout;
+    use seiri_cli::layout::{self, Layout};
+    use seiri_cli::parsers::cpp::parse_cpp_file;
     use std::fs;
+    use std::fs::File;
     use std::io::Cursor;
-    use std::{fs::File, path::Path};
     use tempfile::TempDir;
 
     #[test]
@@ -466,6 +406,31 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_project_files_parses_every_supported_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let rust_file = temp_dir.path().join("lib.rs");
+        File::create(&rust_file).unwrap();
+        let rust_contents = "pub fn helper() -> u32 { 42 }\n";
+        fs::write(&rust_file, rust_contents).unwrap();
+
+        let python_file = temp_dir.path().join("script.py");
+        fs::write(&python_file, "def main():\n    return 0\n").unwrap();
+
+        let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
+        let files_to_process = walk_directory(temp_dir.path(), true);
+        detect_project_languages(&files_to_process, &mut language_files);
+
+        let parsed = parse_project_files(&language_files, false);
+
+        assert_eq!(parsed.len(), language_files.len());
+        // LOC is counted as newlines plus one, since the last line may be unterminated.
+        assert_eq!(
+            parsed.get(&rust_file).map(|node| node.loc()),
+            Some(rust_contents.matches('\n').count() as u32 + 1)
+        );
+    }
+
+    #[test]
     fn test_update_flag_parses_without_project_path() {
         let args = Cli::try_parse_from(["seiri", "--update"]).unwrap();
 
@@ -537,79 +502,6 @@ mod tests {
         let mut reader = Cursor::new(b"\n".to_vec());
 
         assert!(confirm_overwrite(&output_path, false, &mut reader).is_err());
-    }
-
-    #[test]
-    fn test_detect_file() {
-        let current_file = Path::new(file!());
-        assert!(current_file.try_exists().is_ok());
-
-        let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
-        let mut detected_languages = HashSet::new();
-        detect_file_language(
-            current_file.to_path_buf(),
-            &mut language_files,
-            &mut detected_languages,
-        );
-
-        assert!(!detected_languages.is_empty());
-        assert!(detected_languages.contains(&Language::Rust));
-    }
-
-    #[test]
-    fn test_detect_invalid_file() {
-        let current_file = Path::new("Cargo.lock");
-        assert!(current_file.try_exists().is_ok());
-
-        let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
-        let mut detected_languages = HashSet::new();
-        detect_file_language(
-            current_file.to_path_buf(),
-            &mut language_files,
-            &mut detected_languages,
-        );
-
-        assert!(detected_languages.is_empty());
-    }
-
-    #[test]
-    fn test_detect_dir() {
-        let current_dir = Path::new(file!()).parent().unwrap().canonicalize().unwrap();
-        assert!(current_dir.try_exists().is_ok());
-
-        let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
-        let files_to_process = walk_directory(&current_dir, false);
-        let result = detect_project_languages(&files_to_process, &mut language_files);
-
-        assert!(&result.is_some());
-
-        let langs = result.unwrap();
-        assert_eq!(langs.len(), 1);
-        assert!(langs.contains(&Language::Rust));
-    }
-
-    #[test]
-    fn respects_gitignore() {
-        let dir = tempfile::tempdir().unwrap();
-        let ignored_file = dir.path().join("ignored.txt");
-        File::create(&ignored_file).unwrap();
-
-        fs::write(dir.path().join(".gitignore"), "ignored.txt\n").unwrap();
-
-        let files = walk_directory(dir.path(), false);
-        assert!(!files.iter().any(|p| p.ends_with("ignored.txt")));
-    }
-
-    #[test]
-    fn ignores_no_gitignore_flag() {
-        let dir = tempfile::tempdir().unwrap();
-        let ignored_file = dir.path().join("ignored.txt");
-        File::create(&ignored_file).unwrap();
-
-        fs::write(dir.path().join(".gitignore"), "ignored.txt\n").unwrap();
-
-        let files = walk_directory(dir.path(), true);
-        assert!(files.iter().any(|p| p.ends_with("ignored.txt")));
     }
 
     /// Test T019: Verify C++ nodes work with layout algorithms

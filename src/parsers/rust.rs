@@ -14,14 +14,10 @@ fn is_local_import(import_path: &str, file_path: &Path) -> bool {
         || import_path == "crate"
         || import_path == "self"
         || import_path == "super"
-        || {
-            // also treat module-relative imports as local (e.g., modname::foo)
-            if let Some(stem) = file_path.file_stem().and_then(|s| s.to_str()) {
-                import_path.starts_with(&format!("{stem}::"))
-            } else {
-                false
-            }
-        }
+        || file_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .is_some_and(|stem| import_path.starts_with(&format!("{stem}::")))
 }
 
 /// Extract all import paths from a use declaration, handling use lists.

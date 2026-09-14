@@ -57,15 +57,8 @@ pub fn parse_typescript_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
                 }
             }
 
-            // `function hello() {}`
-            "function_declaration" => {
-                if let Some(name_node) = node.child_by_field_name("name") {
-                    functions.insert(get_text(name_node, &code));
-                }
-            }
-
-            // `class MyClass { method() {} }`
-            "method_definition" => {
+            // `function hello() {}` and `method_definition` both insert function names
+            "function_declaration" | "method_definition" => {
                 if let Some(name_node) = node.child_by_field_name("name") {
                     functions.insert(get_text(name_node, &code));
                 }

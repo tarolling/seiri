@@ -34,6 +34,11 @@ cargo test
 cargo test <test_name>          # run a single test by name (substring match)
 cargo test --package seiri-cli test_cpp_layout_sugiyama_and_circular  # run one exact test
 
+# Benchmarks: sequential vs parallel parsing, one row per supported language
+cargo bench
+cargo bench -- --rust ~/src/serde --python ~/src/django \
+               --typescript ~/src/vscode --cpp ~/src/llvm-project
+
 # Coverage (matches CI; excludes src/main.rs, 40% threshold)
 cargo install cargo-tarpaulin
 cargo tarpaulin --verbose --all-features --workspace --timeout 120 --exclude-files src/main.rs
@@ -51,9 +56,11 @@ The pipeline, end to end (see `docs/interfaces.md` for the canonical diagram):
 File --> Parser --> Resolver --> Graph Nodes + Edges --> GUI / PNG / SVG
 ```
 
-1. **Discovery** (`src/main.rs`): `walk_directory` uses the `ignore` crate to walk the project (respecting `.gitignore` unless `--no-gitignore`), then `Language::from_file` (in `src/core/defs.rs`) buckets files by extension.
+Everything except the CLI entry point lives in the `seiri-cli` library (`src/lib.rs`), so the binary and `benches/` share one implementation; `src/main.rs` is a thin CLI over it.
 
-2. **Parsing** (`src/parsers/{rust,python,typescript,cpp}.rs`): each language has its own tree-sitter grammar and a `parse_<lang>_file` function that walks the AST and produces a `FileNode` (`src/core/defs.rs`) — file path, LOC, imports (with local/external classification), defined functions, defined containers (classes/structs/etc.), and external references. Parsers are otherwise independent of each other; add a new language by adding a new module here plus a matching resolver (see below) and a `Language` variant.
+1. **Discovery** (`src/discovery.rs`): `walk_directory` uses the `ignore` crate to walk the project (respecting `.gitignore` unless `--no-gitignore`), then `Language::from_file` (in `src/core/defs.rs`) buckets files by extension.
+
+2. **Parsing** (`src/parsers/{rust,python,typescript,cpp}.rs`): each language has its own tree-sitter grammar and a `parse_<lang>_file` function that walks the AST and produces a `FileNode` (`src/core/defs.rs`) — file path, LOC, imports (with local/external classification), defined functions, defined containers (classes/structs/etc.), and external references. `src/parsers.rs` drives them: `parse_file` dispatches by language, `parse_all_parallel` runs every file across rayon's thread pool (what the CLI uses), and `parse_all_sequential` is the reference implementation the equivalence test and `benches/parsing.rs` compare against. Parsers are otherwise independent of each other; add a new language by adding a new module here plus a matching resolver (see below) and a `Language` variant.
 
 3. **Resolution** (`src/core/resolvers.rs` + `src/core/resolvers/{rust,python,typescript,cpp}.rs`): each language implements the `LanguageResolver` trait (`build_module_map`, `resolve_import`, `resolve_external_references`) to turn raw import strings into actual file paths within the project (e.g. Rust's `crate::foo::bar` -> `src/foo/bar.rs`). `GraphBuilder` (in `resolvers.rs`) owns one resolver per `Language`, builds each resolver's module map first, then walks every `FileNode`'s imports/external references to produce `GraphNode`s (`FileNode` + resolved edges as `Vec<PathBuf>`). Only local imports become edges; external/library imports are currently skipped.
 
