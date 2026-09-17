@@ -562,9 +562,10 @@ mod tests {
     }
 
     /// Test T019: Verify C++ nodes work with layout algorithms
-    /// Creates a simple C++ project and tests both Sugiyama and Circular layouts
+    /// Creates a simple C++ project and tests Sugiyama, Circular, and
+    /// Force-Directed layouts
     #[test]
-    fn test_cpp_layout_sugiyama_and_circular() {
+    fn test_cpp_layout_sugiyama_circular_and_force_directed() {
         let temp_dir = TempDir::new().unwrap();
 
         // Create a simple C++ project with dependencies
@@ -639,6 +640,9 @@ mod tests {
             layout::sugiyama::SugiyamaLayout::new(layout::sugiyama::SugiyamaConfig::default());
         let circular_layout =
             layout::circular::CircularLayout::new(layout::circular::CircularConfig::default());
+        let force_directed_layout = layout::force_directed::ForceDirectedLayout::new(
+            layout::force_directed::ForceDirectedConfig::default(),
+        );
 
         // Create a simple graph to test layout
         let mut graph = petgraph::graph::Graph::new();
@@ -674,6 +678,13 @@ mod tests {
             "Circular layout should produce positions"
         );
 
+        // Test Force-Directed layout
+        let positions_force_directed = force_directed_layout.layout(&graph);
+        assert!(
+            !positions_force_directed.is_empty(),
+            "Force-directed layout should produce positions"
+        );
+
         // Verify positions have valid coordinates
         for (x, y) in positions_sugiyama.values() {
             assert!(
@@ -688,6 +699,15 @@ mod tests {
             assert!(
                 x.is_finite() && y.is_finite(),
                 "Circular layout position should have finite coordinates: ({}, {})",
+                x,
+                y
+            );
+        }
+
+        for (x, y) in positions_force_directed.values() {
+            assert!(
+                x.is_finite() && y.is_finite(),
+                "Force-directed layout position should have finite coordinates: ({}, {})",
                 x,
                 y
             );

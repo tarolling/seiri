@@ -671,11 +671,19 @@ impl SeiriGraph {
 
             egui::ComboBox::from_label("Layout")
                 .selected_text(match self.layout_type {
+                    LayoutType::ForceDirected => "Force-Directed",
                     LayoutType::Circular => "Circular",
                     LayoutType::Sugiyama => "Sugiyama",
                 })
                 .show_ui(ui, |ui| {
                     let mut changed = false;
+                    changed |= ui
+                        .selectable_value(
+                            &mut self.layout_type,
+                            LayoutType::ForceDirected,
+                            "Force-Directed",
+                        )
+                        .clicked();
                     changed |= ui
                         .selectable_value(&mut self.layout_type, LayoutType::Circular, "Circular")
                         .clicked();
