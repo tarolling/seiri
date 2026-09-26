@@ -611,6 +611,8 @@ mod tests {
     /// introduces a worse complexity class, per the 500-1000+ file
     /// performance requirement for this layout.
     #[test]
+    // wall-clock budgets are meaningless under coverage instrumentation
+    #[cfg_attr(tarpaulin, ignore)]
     fn layout_of_1000_nodes_completes_within_time_budget() {
         let layout = ForceDirectedLayout::new(ForceDirectedConfig::default());
         let mut graph: Graph<(), ()> = Graph::new();

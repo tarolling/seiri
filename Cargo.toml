@@ -57,6 +57,10 @@ tree-sitter-typescript = "0.23.2"
 [dev-dependencies]
 tempfile = "3.27.0"
 
+# `cargo tarpaulin` sets `--cfg tarpaulin`; declare it so rustc doesn't flag it.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(tarpaulin)"] }
+
 # The lib and bin harnesses would otherwise run first and reject the `parsing`
 # bench's flags (e.g. `--rust <path>`), so keep `cargo bench` pointed at the
 # single benchmark target below.
