@@ -10,6 +10,7 @@ use std::path::PathBuf;
 
 mod camera;
 mod culling;
+mod hit_test;
 
 use culling::segment_intersects_rect;
 
@@ -264,6 +265,23 @@ impl SeiriGraph {
         base_radius * self.camera.zoom_level()
     }
 
+    /// Screen-space width of the node border stroke at the current zoom.
+    fn node_border_width(&self) -> f32 {
+        2.0 * self.camera.zoom_level().sqrt()
+    }
+
+    /// Index of the topmost node drawn under screen position `cursor`, including its border.
+    fn node_at_screen_pos(&self, cursor: Pos2, canvas_rect: &Rect) -> Option<usize> {
+        let border_half_width = self.node_border_width() / 2.0;
+        let nodes = (0..self.graph_nodes.len()).map(|i| {
+            let center = self
+                .camera
+                .world_to_screen(self.node_positions[i].to_pos2(), canvas_rect);
+            (center, self.node_screen_radius(i) + border_half_width)
+        });
+        hit_test::topmost_node_at(cursor, nodes)
+    }
+
     fn draw_graph(&mut self, ui: &mut Ui, canvas_rect: &Rect) {
         let painter = ui.painter_at(*canvas_rect);
 
@@ -376,7 +394,7 @@ impl SeiriGraph {
             painter.circle_stroke(
                 screen_pos,
                 node_radius,
-                egui::Stroke::new(2.0 * self.camera.zoom_level().sqrt(), border_color),
+                egui::Stroke::new(self.node_border_width(), border_color),
             );
 
             // Node label with background for better readability
@@ -449,37 +467,15 @@ impl SeiriGraph {
 
     /// Handle highlighting of nodes hovered over.
     fn handle_hover(&mut self, response: &mut Response, canvas_rect: &Rect) {
-        if !response.hovered() {
-            return;
+        let hovered = response
+            .hover_pos()
+            .filter(|_| response.hovered())
+            .and_then(|cursor_pos| self.node_at_screen_pos(cursor_pos, canvas_rect));
+
+        if hovered != self.hovered_node {
+            self.hovered_node = hovered;
+            response.mark_changed();
         }
-
-        if let Some(cursor_pos) = response.hover_pos() {
-            let world_mouse = self.camera.screen_to_world(cursor_pos, canvas_rect);
-            for (i, _) in self.graph_nodes.iter().enumerate() {
-                let dist = (world_mouse - self.node_positions[i]).to_vec2().length();
-
-                // TODO: insanely inefficient, please change this someday
-                let betweenness_score = self
-                    .graph_analysis
-                    .as_ref()
-                    .and_then(|analysis| analysis.get_betweenness_centrality(NodeIndex::new(i)));
-
-                let node_radius = self.graph_nodes[i].calculate_size(
-                    self.min_loc,
-                    self.max_loc,
-                    self.min_node_radius,
-                    self.max_node_radius,
-                    betweenness_score,
-                );
-                if dist < node_radius {
-                    self.hovered_node = Some(i);
-                    return;
-                }
-            }
-        }
-
-        self.hovered_node = None;
-        response.mark_changed();
     }
 
     /// Handle zoom via mouse scroll.
@@ -508,32 +504,17 @@ impl SeiriGraph {
 
         let drag_delta = response.drag_delta();
 
-        // TODO: perform hit test here instead
+        // Pick the dragged node once, from where the press began, so the drag doesn't jump to
+        // other nodes the cursor passes over.
+        if response.drag_started()
+            && let Some(press_pos) = response.ctx.input(|i| i.pointer.press_origin())
+            && let Some(node) = self.node_at_screen_pos(press_pos, canvas_rect)
+        {
+            response.dnd_set_drag_payload(node);
+        }
 
         if let Some(cursor_pos) = response.hover_pos() {
             let world_mouse = self.camera.screen_to_world(cursor_pos, canvas_rect);
-
-            for (i, _) in self.graph_nodes.iter().enumerate() {
-                let dist = (world_mouse - self.node_positions[i]).to_vec2().length();
-
-                // TODO: insanely inefficient, please change this someday
-                let betweenness_score = self
-                    .graph_analysis
-                    .as_ref()
-                    .and_then(|analysis| analysis.get_betweenness_centrality(NodeIndex::new(i)));
-
-                let node_radius = self.graph_nodes[i].calculate_size(
-                    self.min_loc,
-                    self.max_loc,
-                    self.min_node_radius,
-                    self.max_node_radius,
-                    betweenness_score,
-                );
-                if dist < node_radius {
-                    response.dnd_set_drag_payload(i);
-                    break;
-                }
-            }
 
             if let Some(node) = response.dnd_hover_payload::<usize>() {
                 self.node_positions[*node] = world_mouse.to_vec2();
@@ -556,34 +537,7 @@ impl SeiriGraph {
         }
 
         if let Some(click_pos) = response.interact_pointer_pos() {
-            let click_world_pos = self.camera.screen_to_world(click_pos, canvas_rect);
-
-            for (i, _) in self.graph_nodes.iter().enumerate() {
-                let dist = (click_world_pos - self.node_positions[i])
-                    .to_vec2()
-                    .length();
-
-                // TODO: insanely inefficient, please change this someday
-                let betweenness_score = self
-                    .graph_analysis
-                    .as_ref()
-                    .and_then(|analysis| analysis.get_betweenness_centrality(NodeIndex::new(i)));
-
-                let node_radius = self.graph_nodes[i].calculate_size(
-                    self.min_loc,
-                    self.max_loc,
-                    self.min_node_radius,
-                    self.max_node_radius,
-                    betweenness_score,
-                );
-                if dist < node_radius {
-                    self.selected_node = Some(i);
-                    return;
-                }
-            }
-
-            // clicked on empty space
-            self.selected_node = None;
+            self.selected_node = self.node_at_screen_pos(click_pos, canvas_rect);
         }
 
         response.mark_changed();
