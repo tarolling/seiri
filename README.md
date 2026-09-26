@@ -24,7 +24,7 @@
 <br>
 
 <div align="center">
-  <img alt="Sample output" src="./docs/example.png" style="width: 85%;">
+  <img alt="force-directed on polars" src="./docs/polars.png" style="width: 85%;">
 </div>
 
 ## Overview

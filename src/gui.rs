@@ -24,6 +24,64 @@ fn edge_tip_at_node_boundary(from: Pos2, to: Pos2, radius: f32) -> Pos2 {
     to - delta.normalized() * radius
 }
 
+/// World-space point layouts are centered on.
+const WORLD_CENTER: f32 = 500.0;
+/// Minimum world-space extent of a layout; smaller layouts are scaled up to it.
+const TARGET_LAYOUT_SIZE: f32 = 800.0;
+
+/// Maps raw layout positions into world space, centered on `WORLD_CENTER` and
+/// scaled up (never down) so the layout spans at least `TARGET_LAYOUT_SIZE`.
+/// Returns the world positions and their bounding box.
+fn fit_layout_to_world(
+    raw_positions: &HashMap<NodeIndex, (f32, f32)>,
+) -> (HashMap<NodeIndex, Pos2>, Rect) {
+    let mut min_x = f32::INFINITY;
+    let mut min_y = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    let mut max_y = f32::NEG_INFINITY;
+    for &(x, y) in raw_positions.values() {
+        min_x = min_x.min(x);
+        min_y = min_y.min(y);
+        max_x = max_x.max(x);
+        max_y = max_y.max(y);
+    }
+
+    let max_dim = (max_x - min_x).max(max_y - min_y);
+    let scale = if max_dim > f32::EPSILON {
+        (TARGET_LAYOUT_SIZE / max_dim).max(1.0)
+    } else {
+        // in case of insignificant bounds
+        1.0
+    };
+    let center_x = (min_x + max_x) / 2.0;
+    let center_y = (min_y + max_y) / 2.0;
+
+    let positions: HashMap<NodeIndex, Pos2> = raw_positions
+        .iter()
+        .map(|(&node, &(x, y))| {
+            let world = pos2(
+                (x - center_x) * scale + WORLD_CENTER,
+                (y - center_y) * scale + WORLD_CENTER,
+            );
+            (node, world)
+        })
+        .collect();
+
+    let bounds = positions.values().fold(Rect::NOTHING, |rect, &p| {
+        rect.union(Rect::from_min_max(p, p))
+    });
+    let bounds = if bounds.is_finite() {
+        bounds
+    } else {
+        Rect::from_min_max(
+            pos2(WORLD_CENTER, WORLD_CENTER),
+            pos2(WORLD_CENTER, WORLD_CENTER),
+        )
+    };
+
+    (positions, bounds)
+}
+
 /// Build a petgraph mirroring the real dependency edges between `graph_nodes`,
 /// resolving each edge's file path to its target's actual index rather than
 /// assuming an edge's position within its source node's edge list matches the
@@ -143,43 +201,11 @@ impl SeiriGraph {
         // Get layout positions
         let layout = layout::create_layout(self.layout_type);
         let raw_positions = layout.layout(&graph);
+        let (world_positions, bounds) = fit_layout_to_world(&raw_positions);
 
-        // Find the bounds of the layout
-        let mut min_x = f32::INFINITY;
-        let mut min_y = f32::INFINITY;
-        let mut max_x = f32::NEG_INFINITY;
-        let mut max_y = f32::NEG_INFINITY;
-
-        for &(x, y) in raw_positions.values() {
-            min_x = min_x.min(x);
-            min_y = min_y.min(y);
-            max_x = max_x.max(x);
-            max_y = max_y.max(y);
-        }
-
-        // Calculate center and scale
-        let width = max_x - min_x;
-        let height = max_y - min_y;
-        let target_size = 800.0; // Target layout size
-        let max_dim = width.max(height);
-        let scale = if max_dim > f32::EPSILON {
-            target_size / max_dim
-        } else {
-            // in case of insignificant bounds
-            1.0
-        };
-
-        // Center of the layout
-        let center_x = (min_x + max_x) / 2.0;
-        let center_y = (min_y + max_y) / 2.0;
-
-        // initialize positions
         for (i, node_idx) in node_indices.iter().enumerate() {
-            if let Some(&(x, y)) = raw_positions.get(node_idx) {
-                // scale and center the coordinates in world space
-                let world_x = (x - center_x) * scale + 500.0; // center at world position 500, matches default of 1000
-                let world_y = (y - center_y) * scale + 500.0;
-                self.node_positions[i] = vec2(world_x, world_y);
+            if let Some(&world) = world_positions.get(node_idx) {
+                self.node_positions[i] = world.to_vec2();
             }
         }
 
@@ -188,7 +214,7 @@ impl SeiriGraph {
 
         // Reset camera and zoom to frame the layout
         self.camera_pos = egui::Vec2::ZERO;
-        self.camera.reset();
+        self.camera.frame(bounds);
     }
 
     fn get_node_color(&self, index: usize) -> egui::Color32 {
@@ -671,11 +697,19 @@ impl SeiriGraph {
 
             egui::ComboBox::from_label("Layout")
                 .selected_text(match self.layout_type {
+                    LayoutType::ForceDirected => "Force-Directed",
                     LayoutType::Circular => "Circular",
                     LayoutType::Sugiyama => "Sugiyama",
                 })
                 .show_ui(ui, |ui| {
                     let mut changed = false;
+                    changed |= ui
+                        .selectable_value(
+                            &mut self.layout_type,
+                            LayoutType::ForceDirected,
+                            "Force-Directed",
+                        )
+                        .clicked();
                     changed |= ui
                         .selectable_value(&mut self.layout_type, LayoutType::Circular, "Circular")
                         .clicked();
@@ -1004,6 +1038,46 @@ mod tests {
         let app = SeiriGraph::new(Vec::new());
 
         assert!(app.file_to_index.is_empty());
+    }
+
+    // --- fit_layout_to_world ---
+
+    #[test]
+    fn fit_layout_never_shrinks_large_layouts() {
+        let a = NodeIndex::new(0);
+        let b = NodeIndex::new(1);
+        let raw = HashMap::from([(a, (0.0, 0.0)), (b, (3000.0, 0.0))]);
+
+        let (positions, bounds) = fit_layout_to_world(&raw);
+
+        assert!((positions[&b].x - positions[&a].x - 3000.0).abs() < 1e-3);
+        assert!((bounds.width() - 3000.0).abs() < 1e-3);
+        assert!((bounds.center().x - 500.0).abs() < 1e-3);
+        assert!((bounds.center().y - 500.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn fit_layout_scales_small_layouts_to_target() {
+        let a = NodeIndex::new(0);
+        let b = NodeIndex::new(1);
+        let raw = HashMap::from([(a, (-100.0, 0.0)), (b, (100.0, 50.0))]);
+
+        let (positions, bounds) = fit_layout_to_world(&raw);
+
+        assert!((positions[&a] - pos2(100.0, 400.0)).length() < 1e-3);
+        assert!((positions[&b] - pos2(900.0, 600.0)).length() < 1e-3);
+        assert!((bounds.width() - 800.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn fit_layout_of_single_point_is_finite() {
+        let a = NodeIndex::new(0);
+        let raw = HashMap::from([(a, (42.0, -7.0))]);
+
+        let (positions, bounds) = fit_layout_to_world(&raw);
+
+        assert_eq!(positions[&a], pos2(500.0, 500.0));
+        assert!(bounds.is_finite());
     }
 
     // --- initialize_positions (degenerate layout bounding box must not produce NaN) ---
