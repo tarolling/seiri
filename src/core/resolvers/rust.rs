@@ -192,35 +192,36 @@ impl LanguageResolver for RustResolver {
             }
         } else if import_path.starts_with("self::") {
             // self import: resolves within the current module itself
-            if let Some(current_module) = self.file_to_module.get(from_file) {
-                let self_import = import_path.strip_prefix("self::").unwrap();
+            self.file_to_module
+                .get(from_file)
+                .and_then(|current_module| {
+                    let current_module = current_module.clone();
+                    let self_import = import_path.strip_prefix("self::").unwrap();
 
-                let mut new_parts: Vec<&str> = current_module.split("::").collect();
-                new_parts.extend(self_import.split("::"));
-                let resolved_path = new_parts.join("::");
-                self.module_to_file.get(&resolved_path).cloned()
-            } else {
-                None
-            }
+                    let mut new_parts: Vec<&str> = current_module.split("::").collect();
+                    new_parts.extend(self_import.split("::"));
+                    let resolved_path = new_parts.join("::");
+                    self.module_to_file.get(&resolved_path).cloned()
+                })
         } else {
             // try to resolve as relative import or direct module name
-            if let Some(current_module) = self.file_to_module.get(from_file) {
-                let current_parts: Vec<&str> = current_module.split("::").collect();
+            self.file_to_module
+                .get(from_file)
+                .and_then(|current_module| {
+                    let current_parts: Vec<&str> = current_module.split("::").collect();
 
-                // try as a sibling module of the current one; at the crate root
-                // there is no parent to step up to, so the root itself is the
-                // base rather than bailing out
-                let mut new_parts = if current_parts.len() <= 1 {
-                    current_parts.clone()
-                } else {
-                    current_parts[..current_parts.len() - 1].to_vec()
-                };
-                new_parts.extend(import_path.split("::"));
-                let resolved_path = new_parts.join("::");
-                self.module_to_file.get(&resolved_path).cloned()
-            } else {
-                None
-            }
+                    // try as a sibling module of the current one; at the crate root
+                    // there is no parent to step up to, so the root itself is the
+                    // base rather than bailing out
+                    let mut new_parts = if current_parts.len() <= 1 {
+                        current_parts.clone()
+                    } else {
+                        current_parts[..current_parts.len() - 1].to_vec()
+                    };
+                    new_parts.extend(import_path.split("::"));
+                    let resolved_path = new_parts.join("::");
+                    self.module_to_file.get(&resolved_path).cloned()
+                })
         }
     }
 

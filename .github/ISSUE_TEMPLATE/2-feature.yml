@@ -9,9 +9,9 @@ body:
   - attributes:
       label: Initial checklist
       options:
-        - label: I read the [contributing guide](https://github.com/tarolling/seiri/blob/main/CONTRIBUTING.md)
+        - label: I read the [contributing guide](https://github.com/tarolling/seiri/blob/main/.github/CONTRIBUTING.md)
           required: true
-        - label: I agree to follow the [Code of Conduct](https://github.com/tarolling/seiri/blob/main/CODE_OF_CONDUCT.md)
+        - label: I agree to follow the [Code of Conduct](https://github.com/tarolling/seiri/blob/main/.github/CODE_OF_CONDUCT.md)
           required: true
         - label: I searched [issues](https://github.com/tarolling/seiri/issues) and [discussions](https://github.com/tarolling/seiri/discussions) and couldn't find anything (or linked relevant results below)
           required: true

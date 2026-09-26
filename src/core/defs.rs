@@ -222,11 +222,9 @@ impl GraphNode {
         };
 
         // Adjust size based on betweenness centrality if available
-        if let Some(betweenness_score) = betweenness {
+        betweenness.map_or(base_size, |betweenness_score| {
             // Increase size by up to 40% based on betweenness centrality
             base_size * (1.0 + betweenness_score as f32 * 0.4)
-        } else {
-            base_size
-        }
+        })
     }
 }
