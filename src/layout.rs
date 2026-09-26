@@ -29,8 +29,3 @@ pub fn create_layout(layout_type: LayoutType) -> Box<dyn Layout> {
         LayoutType::Sugiyama => Box::new(SugiyamaLayout::new(SugiyamaConfig::default())),
     }
 }
-
-#[allow(dead_code)]
-pub fn default_layout() -> Box<dyn Layout> {
-    create_layout(LayoutType::default())
-}
