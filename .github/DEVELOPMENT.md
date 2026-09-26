@@ -1,30 +1,4 @@
-# Development with Docker
-
-## Prerequisites
-
-- Docker
-- Docker Compose
-
-## Getting Started
-
-1. Build and start the development container:
-
-   ```bash
-   docker-compose up -d
-   ```
-
-2. Enter the container:
-
-   ```bash
-   docker-compose exec dev bash
-   ```
-
-3. Inside the container, you can:
-   - Build the project: `cargo build`
-   - Run tests: `cargo test`
-   - Run the application: `cargo run`
-
-4. The project directory is mounted at `/app` in the container, so any changes you make on your host machine will be reflected inside the container.
+# Development Guide
 
 ## Building Releases
 
