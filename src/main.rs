@@ -329,8 +329,12 @@ fn confirm_overwrite<R: BufRead>(path: &Path, force: bool, reader: &mut R) -> Re
 fn resolve_project_path(provided: Option<&Path>) -> Result<PathBuf, String> {
     match provided {
         // `dunce` avoids the `\\?\` verbatim prefix std adds on Windows.
-        Some(path) => dunce::canonicalize(path).map_err(|e| format!("Failed to canonicalize path: {e}")),
-        None => std::env::current_dir().map_err(|e| format!("Failed to get current directory: {e}")),
+        Some(path) => {
+            dunce::canonicalize(path).map_err(|e| format!("Failed to canonicalize path: {e}"))
+        }
+        None => {
+            std::env::current_dir().map_err(|e| format!("Failed to get current directory: {e}"))
+        }
     }
 }
 

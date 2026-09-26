@@ -11,6 +11,7 @@ version = "0.4.3"
 
 [dependencies]
 clap = { version = "4.6.6", features = ["derive", "cargo"] }
+dunce = "1.0.5"
 eframe = { version = "0.36.2", default-features = false, features = [
     "accesskit",
     "default_fonts",
