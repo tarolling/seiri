@@ -1,9 +1,10 @@
 //! Force-directed graph layout (Fruchterman-Reingold spring-embedder).
 //! See: <https://en.wikipedia.org/wiki/Force-directed_graph_drawing>
 //!
-//! Complexity: O(n^2) total force evaluations per iteration (all-pairs
-//! repulsion, no Barnes-Hut/grid approximation), parallelized across CPU
-//! cores via `rayon` to hit the 500-1000+ node performance target. This
+//! Complexity: O(n^2) total force evaluations per iteration (every pair is
+//! checked against the repulsion cutoff, no Barnes-Hut/grid approximation),
+//! parallelized across CPU cores via `rayon` to hit the 500-1000+ node
+//! performance target. This
 //! buys a constant-factor (core-count) speedup, not a better asymptotic
 //! class -- if graphs ever need to scale past roughly 5-10k nodes, a
 //! Barnes-Hut quadtree would be the next step.
@@ -13,6 +14,10 @@ use petgraph::graph::{Graph, NodeIndex};
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::f32::consts::PI;
+
+const OVERLAP_REMOVAL_PASSES: usize = 50;
+/// Effective repulsion cutoff per `ideal_edge_length * sqrt(node count)`.
+const CUTOFF_GROWTH: f32 = 0.25;
 
 /// Configuration options for force-directed layout.
 #[derive(Debug, Clone)]
@@ -31,8 +36,17 @@ pub struct ForceDirectedConfig {
     pub cooling_factor: f32,
     /// Minimum distance used in force calculations to avoid division by zero.
     pub min_distance: f32,
-    /// Radius of the deterministic circular seed placement.
-    pub initial_radius: f32,
+    /// Scale of the deterministic spiral seed placement; seeded nodes start
+    /// roughly `1.8 * seed_spacing` apart.
+    pub seed_spacing: f32,
+    /// Minimum distance beyond which node pairs no longer repel each other;
+    /// the effective cutoff grows with the square root of the node count.
+    pub repulsion_cutoff: f32,
+    /// Strength of the pull toward the layout's centroid, proportional to
+    /// distance.
+    pub gravity: f32,
+    /// Minimum distance enforced between any two nodes after the simulation.
+    pub min_node_separation: f32,
 }
 
 impl Default for ForceDirectedConfig {
@@ -44,7 +58,10 @@ impl Default for ForceDirectedConfig {
             initial_temperature: 150.0,
             cooling_factor: 0.97,
             min_distance: 0.01,
-            initial_radius: 100.0,
+            seed_spacing: 75.0,
+            repulsion_cutoff: 300.0,
+            gravity: 0.05,
+            min_node_separation: 130.0,
         }
     }
 }
@@ -89,11 +106,62 @@ fn repulsive_force(
     from_idx: usize,
     to_idx: usize,
     k: f32,
+    cutoff: f32,
     config: &ForceDirectedConfig,
 ) -> (f32, f32) {
     let (ux, uy, dist) = direction_and_distance(from, to, from_idx, to_idx, config.min_distance);
+    if dist > cutoff {
+        return (0.0, 0.0);
+    }
     let force = config.repulsion_strength * k * k / dist;
     (ux * force, uy * force)
+}
+
+/// Pull of `pos` toward `center`, proportional to their distance.
+fn gravity_force(pos: (f32, f32), center: (f32, f32), gravity: f32) -> (f32, f32) {
+    ((center.0 - pos.0) * gravity, (center.1 - pos.1) * gravity)
+}
+
+/// Pushes overlapping node pairs apart until no two nodes are closer than
+/// `min_separation`, or `max_passes` is reached.
+fn separate_overlapping_nodes(
+    pos: &mut [(f32, f32)],
+    min_separation: f32,
+    min_distance: f32,
+    max_passes: usize,
+) {
+    if min_separation <= 0.0 {
+        return;
+    }
+    for _ in 0..max_passes {
+        let mut moved = false;
+        for i in 0..pos.len() {
+            for j in (i + 1)..pos.len() {
+                let (ux, uy, dist) = direction_and_distance(pos[i], pos[j], i, j, min_distance);
+                if dist < min_separation {
+                    // split the overlap evenly, each node moving half of it
+                    let push = (min_separation - dist) / 2.0;
+                    pos[i].0 += ux * push;
+                    pos[i].1 += uy * push;
+                    pos[j].0 -= ux * push;
+                    pos[j].1 -= uy * push;
+                    moved = true;
+                }
+            }
+        }
+        if !moved {
+            break;
+        }
+    }
+}
+
+/// Deterministic seed position of the `i`th node on a phyllotaxis (sunflower)
+/// spiral, which fills a disc at roughly uniform density.
+fn seed_position(i: usize, spacing: f32) -> (f32, f32) {
+    let golden_angle = PI * (3.0 - 5.0f32.sqrt());
+    let radius = spacing * (i as f32 + 0.5).sqrt();
+    let angle = i as f32 * golden_angle;
+    (radius * angle.cos(), radius * angle.sin())
 }
 
 /// Attractive spring force pulling `from` toward `to` (`dist^2 / k`).
@@ -139,30 +207,35 @@ impl Layout for ForceDirectedLayout {
             }
         }
 
-        let angle_step = 2.0 * PI / n as f32;
         let mut pos: Vec<(f32, f32)> = (0..n)
-            .map(|i| {
-                let angle = i as f32 * angle_step;
-                (
-                    self.config.initial_radius * angle.cos(),
-                    self.config.initial_radius * angle.sin(),
-                )
-            })
+            .map(|i| seed_position(i, self.config.seed_spacing))
             .collect();
 
         let k = self.config.ideal_edge_length;
         let mut temperature = self.config.initial_temperature;
+        // larger layouts need longer-range repulsion so springs between distant
+        // clusters can't compress the nodes in between
+        let cutoff = self
+            .config
+            .repulsion_cutoff
+            .max(CUTOFF_GROWTH * k * (n as f32).sqrt());
 
         for _ in 0..self.config.iterations {
+            let center = pos
+                .iter()
+                .fold((0.0f32, 0.0f32), |acc, p| (acc.0 + p.0, acc.1 + p.1));
+            let center = (center.0 / n as f32, center.1 / n as f32);
+
             let disp: Vec<(f32, f32)> = (0..n)
                 .into_par_iter()
                 .map(|i| {
-                    let mut f = (0.0f32, 0.0f32);
+                    let mut f = gravity_force(pos[i], center, self.config.gravity);
                     for j in 0..n {
                         if i == j {
                             continue;
                         }
-                        let (fx, fy) = repulsive_force(pos[i], pos[j], i, j, k, &self.config);
+                        let (fx, fy) =
+                            repulsive_force(pos[i], pos[j], i, j, k, cutoff, &self.config);
                         f.0 += fx;
                         f.1 += fy;
                     }
@@ -187,6 +260,13 @@ impl Layout for ForceDirectedLayout {
 
             temperature *= self.config.cooling_factor;
         }
+
+        separate_overlapping_nodes(
+            &mut pos,
+            self.config.min_node_separation,
+            self.config.min_distance,
+            OVERLAP_REMOVAL_PASSES,
+        );
 
         nodes.into_iter().zip(pos).collect()
     }
@@ -348,10 +428,111 @@ mod tests {
         );
     }
 
+    fn distance(a: (f32, f32), b: (f32, f32)) -> f32 {
+        ((a.0 - b.0).powi(2) + (a.1 - b.1).powi(2)).sqrt()
+    }
+
+    fn centroid(points: &[(f32, f32)]) -> (f32, f32) {
+        let n = points.len() as f32;
+        let (sx, sy) = points
+            .iter()
+            .fold((0.0, 0.0), |acc, p| (acc.0 + p.0, acc.1 + p.1));
+        (sx / n, sy / n)
+    }
+
+    #[test]
+    fn isolated_node_stays_near_the_connected_cluster() {
+        let config = ForceDirectedConfig::default();
+        let layout = ForceDirectedLayout::new(config.clone());
+        let mut graph: Graph<(), ()> = Graph::new();
+
+        let hub = graph.add_node(());
+        let mut cluster = vec![hub];
+        for _ in 0..10 {
+            let leaf = graph.add_node(());
+            graph.add_edge(hub, leaf, ());
+            cluster.push(leaf);
+        }
+        let isolated = graph.add_node(());
+
+        let positions = layout.layout(&graph);
+
+        let nearest = cluster
+            .iter()
+            .map(|&c| distance(positions[&c], positions[&isolated]))
+            .fold(f32::INFINITY, f32::min);
+        let bound = config.repulsion_cutoff + config.ideal_edge_length;
+        assert!(
+            nearest < bound,
+            "isolated node drifted {nearest} from the cluster (bound {bound})"
+        );
+    }
+
+    #[test]
+    fn disconnected_components_stay_within_bounded_distance() {
+        let config = ForceDirectedConfig::default();
+        let layout = ForceDirectedLayout::new(config.clone());
+        let mut graph: Graph<(), ()> = Graph::new();
+
+        let mut triangles = Vec::new();
+        for _ in 0..2 {
+            let t: Vec<_> = (0..3).map(|_| graph.add_node(())).collect();
+            graph.add_edge(t[0], t[1], ());
+            graph.add_edge(t[1], t[2], ());
+            graph.add_edge(t[2], t[0], ());
+            triangles.push(t);
+        }
+
+        let positions = layout.layout(&graph);
+
+        let centers: Vec<(f32, f32)> = triangles
+            .iter()
+            .map(|t| centroid(&t.iter().map(|n| positions[n]).collect::<Vec<_>>()))
+            .collect();
+        let gap = distance(centers[0], centers[1]);
+        let bound = 4.0 * config.ideal_edge_length;
+        assert!(gap < bound, "components ended {gap} apart (bound {bound})");
+    }
+
+    #[test]
+    fn nodes_respect_min_node_separation() {
+        let config = ForceDirectedConfig::default();
+        let layout = ForceDirectedLayout::new(config.clone());
+        let mut graph: Graph<(), ()> = Graph::new();
+
+        let hub = graph.add_node(());
+        for _ in 0..30 {
+            let leaf = graph.add_node(());
+            graph.add_edge(hub, leaf, ());
+        }
+        let ring: Vec<_> = (0..12).map(|_| graph.add_node(())).collect();
+        for i in 0..ring.len() {
+            for offset in 1..4 {
+                graph.add_edge(ring[i], ring[(i + offset) % ring.len()], ());
+            }
+        }
+
+        let positions = layout.layout(&graph);
+        let all: Vec<(f32, f32)> = positions.values().copied().collect();
+
+        assert!(config.min_node_separation > 0.0);
+        let required = 0.9 * config.min_node_separation;
+        for i in 0..all.len() {
+            for j in (i + 1)..all.len() {
+                let dist = distance(all[i], all[j]);
+                assert!(
+                    dist >= required,
+                    "nodes {i} and {j} are only {dist} apart (need {required})"
+                );
+            }
+        }
+    }
+
     #[test]
     fn zero_iterations_returns_seeded_positions_unchanged() {
         let config = ForceDirectedConfig {
             iterations: 0,
+            min_node_separation: 0.0,
             ..ForceDirectedConfig::default()
         };
         let layout = ForceDirectedLayout::new(config.clone());
@@ -363,17 +544,63 @@ mod tests {
 
         let positions = layout.layout(&graph);
 
-        let angle_step = 2.0 * PI / nodes.len() as f32;
         for (i, &node) in nodes.iter().enumerate() {
-            let angle = i as f32 * angle_step;
-            let expected = (
-                config.initial_radius * angle.cos(),
-                config.initial_radius * angle.sin(),
-            );
+            let expected = seed_position(i, config.seed_spacing);
             let (x, y) = positions[&node];
             assert!((x - expected.0).abs() < 1e-4);
             assert!((y - expected.1).abs() < 1e-4);
         }
+    }
+
+    #[test]
+    fn seed_positions_stay_spread_out_for_large_graphs() {
+        let spacing = ForceDirectedConfig::default().seed_spacing;
+        let seeds: Vec<(f32, f32)> = (0..3000).map(|i| seed_position(i, spacing)).collect();
+
+        // compare each seed against the next few in spiral order and a
+        // sample of others, keeping the check well under O(n^2)
+        for i in 0..seeds.len() {
+            for j in (i + 1)..(i + 60).min(seeds.len()) {
+                let dist = distance(seeds[i], seeds[j]);
+                assert!(
+                    dist > spacing,
+                    "seeds {i} and {j} are only {dist} apart (spacing {spacing})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn large_sparse_graph_has_no_overlapping_nodes() {
+        let config = ForceDirectedConfig::default();
+        let layout = ForceDirectedLayout::new(config.clone());
+        let mut graph: Graph<(), ()> = Graph::new();
+
+        // many small hub-and-leaf clusters, loosely linked, plus a large
+        // number of isolated nodes, like a real project with many test files
+        let hubs: Vec<_> = (0..200).map(|_| graph.add_node(())).collect();
+        for &hub in &hubs {
+            for _ in 0..4 {
+                let leaf = graph.add_node(());
+                graph.add_edge(hub, leaf, ());
+            }
+        }
+        for h in 0..hubs.len() {
+            graph.add_edge(hubs[h], hubs[(h * 7 + 1) % hubs.len()], ());
+        }
+        for _ in 0..500 {
+            graph.add_node(());
+        }
+
+        let positions = layout.layout(&graph);
+        let all: Vec<(f32, f32)> = positions.values().copied().collect();
+
+        let required = 0.75 * config.min_node_separation;
+        let overlapping = (0..all.len())
+            .flat_map(|i| ((i + 1)..all.len()).map(move |j| (i, j)))
+            .filter(|&(i, j)| distance(all[i], all[j]) < required)
+            .count();
+        assert_eq!(overlapping, 0, "{overlapping} node pairs overlap");
     }
 
     /// Coarse performance regression guard: a ~1000 node graph with a

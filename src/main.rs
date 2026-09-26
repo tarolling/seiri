@@ -186,15 +186,7 @@ fn run(args: Cli) -> Result<(), String> {
         return update::run_self_update(verbose);
     }
 
-    // Get the project path, using current directory as default
-    let project_path = match provided_path {
-        Some(path) => path
-            .canonicalize()
-            .map_err(|e| format!("Failed to canonicalize path: {e}"))?,
-        None => {
-            std::env::current_dir().map_err(|e| format!("Failed to get current directory: {e}"))?
-        }
-    };
+    let project_path = resolve_project_path(provided_path.as_deref())?;
 
     if verbose {
         println!("Processing path: {}", project_path.display());
@@ -333,6 +325,15 @@ fn confirm_overwrite<R: BufRead>(path: &Path, force: bool, reader: &mut R) -> Re
     }
 }
 
+/// Returns the absolute project path, defaulting to the current directory.
+fn resolve_project_path(provided: Option<&Path>) -> Result<PathBuf, String> {
+    match provided {
+        // `dunce` avoids the `\\?\` verbatim prefix std adds on Windows.
+        Some(path) => dunce::canonicalize(path).map_err(|e| format!("Failed to canonicalize path: {e}")),
+        None => std::env::current_dir().map_err(|e| format!("Failed to get current directory: {e}")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -343,6 +344,25 @@ mod tests {
     use std::fs::File;
     use std::io::Cursor;
     use tempfile::TempDir;
+
+    #[test]
+    fn test_resolve_project_path_is_absolute() {
+        let temp_dir = TempDir::new().unwrap();
+        let resolved = resolve_project_path(Some(temp_dir.path())).unwrap();
+        assert!(resolved.is_absolute());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_resolve_project_path_has_no_verbatim_prefix() {
+        let temp_dir = TempDir::new().unwrap();
+        let resolved = resolve_project_path(Some(temp_dir.path())).unwrap();
+        assert!(
+            !resolved.to_string_lossy().starts_with(r"\\?\"),
+            "unexpected verbatim prefix: {}",
+            resolved.display()
+        );
+    }
 
     #[test]
     fn test_non_existent_path() {

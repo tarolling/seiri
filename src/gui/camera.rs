@@ -2,6 +2,10 @@ use egui::{Pos2, Rect, Vec2, emath::RectTransform, pos2, vec2};
 
 const MIN_ZOOM_LEVEL: f32 = 0.1;
 const MAX_ZOOM_LEVEL: f32 = 1000.0;
+/// Side length of the viewport at zoom level 1.0.
+const DEFAULT_VIEWPORT_SIZE: f32 = 1000.0;
+/// World-space margin kept around bounds passed to `Camera::frame`.
+const FRAME_PADDING: f32 = 100.0;
 
 pub struct Camera {
     viewport: Rect,
@@ -12,7 +16,10 @@ pub struct Camera {
 impl Default for Camera {
     fn default() -> Self {
         Self {
-            viewport: Rect::from_min_max(pos2(0.0, 0.0), pos2(1000.0, 1000.0)),
+            viewport: Rect::from_min_max(
+                pos2(0.0, 0.0),
+                pos2(DEFAULT_VIEWPORT_SIZE, DEFAULT_VIEWPORT_SIZE),
+            ),
             zoom_level: 1.0,
         }
     }
@@ -119,8 +126,27 @@ impl Camera {
 
     #[inline]
     pub fn reset(&mut self) {
-        self.viewport = Rect::from_min_max(pos2(0.0, 0.0), pos2(1000.0, 1000.0));
+        self.viewport = Rect::from_min_max(
+            pos2(0.0, 0.0),
+            pos2(DEFAULT_VIEWPORT_SIZE, DEFAULT_VIEWPORT_SIZE),
+        );
         self.zoom_level = 1.0;
+    }
+
+    /// Centers the viewport on `bounds` and zooms out (never in past the
+    /// default zoom) so `bounds` fits with padding.
+    pub fn frame(&mut self, bounds: Rect) {
+        if !bounds.is_finite() {
+            self.reset();
+            return;
+        }
+
+        let needed_size = bounds.width().max(bounds.height()) + 2.0 * FRAME_PADDING;
+        // derive the viewport from the clamped zoom so zoom level and viewport
+        // scale stay consistent, matching `zoom_at`
+        self.zoom_level = (DEFAULT_VIEWPORT_SIZE / needed_size).clamp(MIN_ZOOM_LEVEL, 1.0);
+        let size = DEFAULT_VIEWPORT_SIZE / self.zoom_level;
+        self.viewport = Rect::from_center_size(bounds.center(), vec2(size, size));
     }
 }
 
@@ -267,6 +293,42 @@ mod tests {
 
         assert!(adjusted.width().is_finite());
         assert!(adjusted.height().is_finite());
+    }
+
+    #[test]
+    fn frame_contains_bounds_and_sets_consistent_zoom() {
+        let mut camera = Camera::default();
+        let bounds = Rect::from_min_max(pos2(-1000.0, 0.0), pos2(2000.0, 2000.0));
+
+        camera.frame(bounds);
+
+        assert!(camera.viewport.contains_rect(bounds));
+        assert!((camera.viewport.center() - bounds.center()).length() < 0.001);
+        let expected_zoom = 1000.0 / camera.viewport.width();
+        assert!((camera.zoom_level() - expected_zoom).abs() < 1e-6);
+    }
+
+    #[test]
+    fn frame_of_default_sized_bounds_matches_reset() {
+        let mut camera = Camera::default();
+        let bounds = Rect::from_min_max(pos2(100.0, 100.0), pos2(900.0, 900.0));
+
+        camera.frame(bounds);
+
+        let default = Camera::default();
+        assert_eq!(camera.viewport, default.viewport);
+        assert_eq!(camera.zoom_level(), default.zoom_level());
+    }
+
+    #[test]
+    fn frame_never_zooms_in_past_default_for_tiny_bounds() {
+        let mut camera = Camera::default();
+        let bounds = Rect::from_min_max(pos2(500.0, 500.0), pos2(500.0, 500.0));
+
+        camera.frame(bounds);
+
+        assert_eq!(camera.zoom_level(), 1.0);
+        assert!(camera.viewport.width().is_finite() && camera.viewport.width() > 0.0);
     }
 
     #[test]
