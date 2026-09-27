@@ -35,22 +35,16 @@ jobs:
         with:
           # Check https://github.com/codacy/codacy-analysis-cli#project-token to get your project token from your Codacy repository
           project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
+          category: codacy-security-scan
           verbose: true
           output: results.sarif
           format: sarif
           gh-code-scanning-compat: true
           max-allowed-issues: 2147483647
 
-      # Codacy emits one SARIF run per tool; code scanning rejects multiple runs sharing a
-      # category, so give each run its own category derived from the tool name
-      - name: Assign a SARIF category per tool
-        run: |
-          jq '.runs |= map(.automationDetails.id = "codacy-" + (.tool.driver.name | ascii_downcase | gsub("[^a-z0-9]+"; "-")) + "/")' \
-            results.sarif > results.categorized.sarif
-          mv results.categorized.sarif results.sarif
-          jq -r '.runs[].automationDetails.id' results.sarif
-
       - name: Upload SARIF results file
         uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           sarif_file: results.sarif
+          category: codeql
+          

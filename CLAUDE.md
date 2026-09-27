@@ -47,9 +47,10 @@ cargo bench
 cargo bench -- --rust ~/src/serde --python ~/src/django \
                --typescript ~/src/vscode --cpp ~/src/llvm-project
 
-# Coverage (matches CI; excludes src/main.rs, 40% threshold)
+# Coverage (matches CI; excludes src/main.rs and benches, 70% threshold)
 cargo install cargo-tarpaulin
-cargo tarpaulin --verbose --all-features --workspace --timeout 120 --exclude-files src/main.rs
+cargo tarpaulin --verbose --all-features --workspace --timeout 120 \
+               --exclude-files src/main.rs --exclude-files 'benches/*' --fail-under 70
 ```
 
 On Linux, building the GUI (`eframe`/`egui`) requires X11/GL dev packages: `pkg-config libx11-dev libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev libgl1-mesa-dev libfontconfig-dev`.
@@ -95,7 +96,7 @@ Touch all of: `Language` enum + `extensions()`/`from_file`/`color()` in `core/de
 
 ## CI expectations
 
-`.github/workflows/ci.yml` runs on every PR to `main`: `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo check --all-features`, then `cargo tarpaulin` with a 40% coverage threshold (excluding `src/main.rs`). Match these locally before pushing.
+`.github/workflows/ci.yml` runs on every PR to `main`: `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo check --all-features`, then `cargo tarpaulin` with a 70% coverage threshold (excluding `src/main.rs` and `benches/`), uploading the report to Codacy. Match these locally before pushing.
 
 ## Releasing
 
