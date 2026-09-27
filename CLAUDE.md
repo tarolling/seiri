@@ -100,7 +100,7 @@ Touch all of: `Language` enum + `extensions()`/`from_file`/`color()` in `core/de
 
 ## Releasing
 
-Release process (`.github/DEVELOPMENT.md`): bump `version` in `Cargo.toml`, commit as "Bump version to X.Y.Z", tag `vX.Y.Z`, push the tag, then run the release GitHub Actions workflow with that tag (builds Linux/macOS/Windows binaries and publishes them). Pass `dry-run` as the tag to test the workflow without publishing.
+Release process (`.github/DEVELOPMENT.md`): bump `version` in `Cargo.toml`, commit as "Bump version to X.Y.Z", tag `vX.Y.Z`, push the tag. Pushing a `v*` tag triggers the release GitHub Actions workflow automatically (builds Linux/macOS/Windows binaries, publishes them, and publishes the crate). Run the workflow manually with `dry-run` as the tag to test it without publishing.
 
 ## Terminology (from CONTRIBUTING.md)
 

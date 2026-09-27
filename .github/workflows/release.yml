@@ -1,6 +1,9 @@
 name: Release
 
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       tag:
@@ -15,12 +18,32 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # Manual runs use the dispatch input; tag pushes use the pushed tag name.
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 permissions:
   contents: write
 
 jobs:
+  verify-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check tag matches Cargo.toml version
+        if: env.RELEASE_TAG != 'dry-run'
+        run: |
+          CRATE_VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+          if [ "$RELEASE_TAG" != "v$CRATE_VERSION" ]; then
+            echo "::error::Tag $RELEASE_TAG does not match Cargo.toml version $CRATE_VERSION (expected v$CRATE_VERSION)"
+            exit 1
+          fi
+          echo "Tag $RELEASE_TAG matches Cargo.toml version $CRATE_VERSION"
+
   macos-x86_64:
+    needs: verify-version
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v7
@@ -49,16 +72,17 @@ jobs:
       - name: Release
         uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
         with:
-          draft: ${{ inputs.tag == 'dry-run' && true || false }}
+          draft: ${{ env.RELEASE_TAG == 'dry-run' && true || false }}
           files: |
             *.tar.gz
             *.sha256
-          name: ${{ inputs.tag }}
-          tag_name: ${{ inputs.tag }}
+          name: ${{ env.RELEASE_TAG }}
+          tag_name: ${{ env.RELEASE_TAG }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   macos-aarch64:
+    needs: verify-version
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v7
@@ -87,16 +111,17 @@ jobs:
       - name: Release
         uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
         with:
-          draft: ${{ inputs.tag == 'dry-run' && true || false }}
+          draft: ${{ env.RELEASE_TAG == 'dry-run' && true || false }}
           files: |
             *.tar.gz
             *.sha256
-          name: ${{ inputs.tag }}
-          tag_name: ${{ inputs.tag }}
+          name: ${{ env.RELEASE_TAG }}
+          tag_name: ${{ env.RELEASE_TAG }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         
   windows:
+    needs: verify-version
     runs-on: windows-2022
     strategy:
       matrix:
@@ -133,16 +158,17 @@ jobs:
       - name: Release
         uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
         with:
-          draft: ${{ inputs.tag == 'dry-run' && true || false }}
+          draft: ${{ env.RELEASE_TAG == 'dry-run' && true || false }}
           files: |
             *.zip
             *.sha256
-          name: ${{ inputs.tag }}
-          tag_name: ${{ inputs.tag }}
+          name: ${{ env.RELEASE_TAG }}
+          tag_name: ${{ env.RELEASE_TAG }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   linux:
+    needs: verify-version
     runs-on: ubuntu-22.04
     strategy:
       matrix:
@@ -201,16 +227,17 @@ jobs:
       - name: Release
         uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
         with:
-          draft: ${{ inputs.tag == 'dry-run' && true || false }}
+          draft: ${{ env.RELEASE_TAG == 'dry-run' && true || false }}
           files: |
             *.tar.gz
             *.sha256
-          name: ${{ inputs.tag }}
-          tag_name: ${{ inputs.tag }}
+          name: ${{ env.RELEASE_TAG }}
+          tag_name: ${{ env.RELEASE_TAG }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   publish-crate:
+    needs: verify-version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -226,14 +253,14 @@ jobs:
                                   libfreetype6-dev libfontconfig-dev
 
       - name: Publish to crates.io (dry run)
-        if: inputs.tag == 'dry-run'
+        if: env.RELEASE_TAG == 'dry-run'
         run: |
           cargo publish \
             --token ${{ secrets.CARGO_REGISTRY_TOKEN }} \
             --dry-run
 
       - name: Publish to crates.io
-        if: inputs.tag != 'dry-run'
+        if: env.RELEASE_TAG != 'dry-run'
         run: |
           cargo publish \
             --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
