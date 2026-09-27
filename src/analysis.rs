@@ -4,6 +4,10 @@ use petgraph::{
 };
 use std::collections::{HashMap, HashSet, VecDeque};
 
+mod community;
+
+pub use community::{louvain, modularity, partition_by_parent_dir};
+
 #[derive(Debug)]
 pub struct GraphAnalysis {
     /// Size of each strongly connected component.
@@ -20,6 +24,12 @@ pub struct GraphAnalysis {
     /// Betweenness centrality scores for each node.
     /// Higher values indicate nodes that appear on more shortest paths.
     pub betweenness_centrality: HashMap<NodeIndex, f64>,
+    /// Louvain community of each node, indexed by node index.
+    pub communities: Vec<usize>,
+    /// Number of distinct Louvain communities.
+    pub community_count: usize,
+    /// Newman–Girvan modularity of the Louvain partition.
+    pub modularity: f64,
 }
 
 impl GraphAnalysis {
@@ -107,7 +117,7 @@ impl GraphAnalysis {
         centrality
     }
 
-    /// Analyze the graph to find both SCCs and betweenness centrality.
+    /// Analyze the graph to find SCCs, betweenness centrality, and Louvain communities.
     pub fn analyze_graph(graph: &Graph<(), ()>) -> Self {
         let mut analysis = Self {
             scc_sizes: Vec::new(),
@@ -116,6 +126,9 @@ impl GraphAnalysis {
             largest_scc_nodes: HashSet::new(),
             sccs_by_size: HashMap::new(),
             betweenness_centrality: HashMap::new(),
+            communities: Vec::new(),
+            community_count: 0,
+            modularity: 0.0,
         };
 
         if graph.node_count() == 0 {
@@ -124,6 +137,10 @@ impl GraphAnalysis {
 
         // Calculate betweenness centrality
         analysis.betweenness_centrality = Self::calculate_betweenness_centrality(graph);
+
+        analysis.communities = louvain(graph);
+        analysis.community_count = analysis.communities.iter().max().map_or(0, |&max| max + 1);
+        analysis.modularity = modularity(graph, &analysis.communities);
 
         // Kosaraju's algorithm, computed iteratively (no recursion depth bound)
         // by petgraph so it can't stack-overflow on large/deep graphs
@@ -156,7 +173,7 @@ impl GraphAnalysis {
         analysis
     }
 
-    /// Returns whether a node is part of the largest SCC
+    /// Returns whether a node is part of the largest SCC.
     pub fn is_in_largest_scc(&self, node: NodeIndex) -> bool {
         self.largest_scc_nodes.contains(&node)
     }
@@ -167,10 +184,15 @@ impl GraphAnalysis {
         self.node_to_scc.get(&node).map(|&idx| self.scc_sizes[idx])
     }
 
-    /// Get the betweenness centrality score for a node
+    /// Get the betweenness centrality score for a node.
     #[allow(dead_code)]
     pub fn get_betweenness_centrality(&self, node: NodeIndex) -> Option<f64> {
         self.betweenness_centrality.get(&node).copied()
+    }
+
+    /// Get the Louvain community of a node.
+    pub fn get_community(&self, node: NodeIndex) -> Option<usize> {
+        self.communities.get(node.index()).copied()
     }
 }
 
@@ -359,6 +381,30 @@ mod tests {
         assert!(analysis.sccs_by_size.get(&3).unwrap().len() == 2); // Two 3-node SCCs
         assert!(analysis.sccs_by_size.get(&2).unwrap().len() == 1); // One 2-node SCC
         assert!(analysis.sccs_by_size.get(&1).unwrap().len() == 2); // Two 1-node SCCs
+    }
+
+    #[test]
+    fn analyze_graph_reports_louvain_communities_and_modularity() {
+        // Two triangles joined by the edge 2 -> 3.
+        let graph = create_test_graph(&[(0, 1), (1, 2), (2, 0), (3, 4), (4, 5), (5, 3), (2, 3)]);
+        let analysis = GraphAnalysis::analyze_graph(&graph);
+
+        assert_eq!(analysis.community_count, 2);
+        assert!((analysis.modularity - 5.0 / 14.0).abs() < 1e-10);
+        let community = |i| analysis.get_community(NodeIndex::new(i)).unwrap();
+        assert_eq!(community(0), community(2));
+        assert_eq!(community(3), community(5));
+        assert_ne!(community(0), community(3));
+        assert_eq!(analysis.get_community(NodeIndex::new(6)), None);
+    }
+
+    #[test]
+    fn analyze_empty_graph_has_no_communities() {
+        let analysis = GraphAnalysis::analyze_graph(&Graph::<(), ()>::new());
+
+        assert_eq!(analysis.community_count, 0);
+        assert!(analysis.communities.is_empty());
+        assert_eq!(analysis.modularity, 0.0);
     }
 
     #[test]

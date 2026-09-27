@@ -1,4 +1,4 @@
-use crate::analysis::GraphAnalysis;
+use crate::analysis::{self, GraphAnalysis};
 use crate::core::defs::GraphNode;
 use crate::gui::camera::Camera;
 use crate::layout::{self, LayoutType};
@@ -148,6 +148,8 @@ pub struct SeiriGraph {
 
     // Graph analysis
     graph_analysis: Option<GraphAnalysis>,
+    /// Modularity of the partition that groups files by parent directory.
+    directory_modularity: Option<f64>,
 }
 
 impl SeiriGraph {
@@ -184,6 +186,7 @@ impl SeiriGraph {
             min_loc,
             max_loc,
             graph_analysis: None,
+            directory_modularity: None,
         };
         app.initialize_positions();
         app
@@ -212,6 +215,12 @@ impl SeiriGraph {
 
         // Analyze graph structure
         self.graph_analysis = Some(GraphAnalysis::analyze_graph(&graph));
+        let directories = analysis::partition_by_parent_dir(
+            self.graph_nodes
+                .iter()
+                .map(|node| node.data().file().as_path()),
+        );
+        self.directory_modularity = Some(analysis::modularity(&graph, &directories));
 
         // Reset camera and zoom to frame the layout
         self.camera_pos = egui::Vec2::ZERO;
@@ -635,6 +644,35 @@ impl SeiriGraph {
                     }
                 }
             });
+
+            ui.collapsing("Modularity", |ui| {
+                ui.label(format!(
+                    "Louvain modularity (Q): {:.3}",
+                    analysis.modularity
+                ));
+                ui.label(format!("Communities: {}", analysis.community_count));
+                if let Some(directory_q) = self.directory_modularity {
+                    ui.label(format!("Directory modularity (Q): {:.3}", directory_q));
+                }
+                ui.small("Q above ~0.3 usually indicates clear module structure.");
+
+                ui.add_space(8.0);
+                ui.label("Community sizes:");
+                let mut sizes = vec![0usize; analysis.community_count];
+                for &community in &analysis.communities {
+                    sizes[community] += 1;
+                }
+                let mut sizes: Vec<_> = sizes.into_iter().enumerate().collect();
+                sizes.sort_by_key(|&(community, size)| (std::cmp::Reverse(size), community));
+                egui::ScrollArea::vertical()
+                    .id_salt("community_sizes")
+                    .max_height(150.0)
+                    .show(ui, |ui| {
+                        for (community, size) in sizes {
+                            ui.label(format!("#{community}: {size} files"));
+                        }
+                    });
+            });
         }
     }
 
@@ -691,16 +729,24 @@ impl SeiriGraph {
 
         ui.group(|ui| {
             ui.strong("File Information");
-            ui.label(format!("📁 {}", node.file().display()));
-            ui.label(format!("🔧 {}", node.language().to_string()));
-            ui.label(format!("📊 {} lines", node.loc()));
+            ui.label(format!("Path: {}", node.file().display()));
+            ui.label(format!("Language: {}", node.language().to_string()));
+            ui.label(format!("Lines: {}", node.loc()));
 
             // Add betweenness centrality score if available
             if let Some(analysis) = &self.graph_analysis
                 && let Some(score) =
                     analysis.get_betweenness_centrality(NodeIndex::new(selected_idx))
             {
-                ui.label(format!("🔄 Betweenness: {:.3}", score));
+                ui.label(format!("Betweenness: {:.3}", score));
+            }
+
+            if let Some(community) = self
+                .graph_analysis
+                .as_ref()
+                .and_then(|analysis| analysis.get_community(NodeIndex::new(selected_idx)))
+            {
+                ui.label(format!("Community #{community}"));
             }
         });
 
@@ -992,6 +1038,35 @@ mod tests {
         let app = SeiriGraph::new(Vec::new());
 
         assert!(app.file_to_index.is_empty());
+    }
+
+    // --- directory_modularity ---
+
+    #[test]
+    fn directory_modularity_scores_partition_by_parent_directory() {
+        // two directories whose files form import triangles, joined by one cross-directory import
+        let graph_nodes = vec![
+            make_node("a/x.rs", &["a/y.rs"]),
+            make_node("a/y.rs", &["a/z.rs"]),
+            make_node("a/z.rs", &["a/x.rs", "b/x.rs"]),
+            make_node("b/x.rs", &["b/y.rs"]),
+            make_node("b/y.rs", &["b/z.rs"]),
+            make_node("b/z.rs", &["b/x.rs"]),
+        ];
+
+        let app = SeiriGraph::new(graph_nodes);
+
+        let q = app
+            .directory_modularity
+            .expect("computed for a non-empty graph");
+        assert!((q - 5.0 / 14.0).abs() < 1e-10, "got {q}");
+    }
+
+    #[test]
+    fn directory_modularity_is_absent_for_no_nodes() {
+        let app = SeiriGraph::new(Vec::new());
+
+        assert_eq!(app.directory_modularity, None);
     }
 
     // --- fit_layout_to_world ---
