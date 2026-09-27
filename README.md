@@ -41,6 +41,16 @@ seiri breaks down project structures into a common format that can be used by de
 
 You can find our pre-built binaries under the Releases tab to download.
 
+### Using cargo
+
+If you are using `cargo`, you can run the following to install it globally:
+
+```sh
+cargo install seiri-cli
+```
+
+### Build from Source
+
 If you want to build from source, clone the repository and make sure to install the Rust toolchain. Then you can run the following commands:
 
 ```sh
