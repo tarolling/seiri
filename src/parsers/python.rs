@@ -1,10 +1,9 @@
 use crate::core::defs::{FileNode, Import, Language};
-use crate::parsers::{advance, get_text};
+use crate::parsers::{advance, get_text, with_parser};
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::sync::LazyLock;
-use tree_sitter::Parser;
 use tree_sitter_python as ts_python;
 
 /// Node kinds this parser acts on, as numeric ids so the tree walk compares
@@ -196,9 +195,7 @@ pub fn parse_python_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
     let code = fs::read_to_string(&path).ok()?;
     let loc = code.matches("\n").count() as u32 + 1; // count number of newlines bc code.lines() has failed me
 
-    let mut parser = Parser::new();
-    parser.set_language(&ts_python::LANGUAGE.into()).ok()?;
-    let tree = parser.parse(&code, None)?;
+    let tree = with_parser(Language::Python, |parser| parser.parse(&code, None))??;
     let root_node = tree.root_node();
 
     let mut imports = HashSet::new();

@@ -1,8 +1,10 @@
 use crate::core::defs::{FileNode, Language};
 use rayon::prelude::*;
-use std::collections::HashMap;
+use std::cell::RefCell;
+use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use tree_sitter::{Node, TreeCursor};
+use tree_sitter::{Node, Parser, TreeCursor};
 
 pub mod cpp;
 pub mod python;
@@ -14,7 +16,67 @@ pub mod typescript;
 /// Returns an empty string when the node's range is not a valid slice of `code`.
 #[inline]
 pub fn get_text(n: Node, code: &str) -> String {
-    code.get(n.byte_range()).unwrap_or("").to_string()
+    text_of(n, code).to_string()
+}
+
+/// The text of `n` borrowed straight from `code`, without the copy [`get_text`]
+/// makes. Returns an empty string when the range is not a valid slice of `code`.
+#[inline]
+pub fn text_of<'code>(n: Node, code: &'code str) -> &'code str {
+    code.get(n.byte_range()).unwrap_or("")
+}
+
+/// Records the text of `n` in `set`, unless the set already holds it.
+///
+/// The tree walk meets the same name once per use, and a large file has
+/// thousands of uses of its few dozen names, so looking the text up before
+/// copying it keeps the walk from allocating a `String` per occurrence.
+#[inline]
+pub fn insert_text(set: &mut HashSet<String>, n: Node, code: &str) {
+    let text = text_of(n, code);
+    if !set.contains(text) {
+        set.insert(text.to_string());
+    }
+}
+
+/// The tree-sitter grammar for `language`.
+fn grammar(language: Language) -> tree_sitter::Language {
+    match language {
+        Language::Python => tree_sitter_python::LANGUAGE.into(),
+        Language::Rust => tree_sitter_rust::LANGUAGE.into(),
+        Language::TypeScript => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+        Language::Cpp => tree_sitter_cpp::LANGUAGE.into(),
+    }
+}
+
+thread_local! {
+    /// One parser per language, per thread. Parsing is the whole cost of a scan
+    /// and a parser carries a parse stack and a subtree pool that grow to fit the
+    /// largest file it has seen, so reusing one beats building a fresh parser for
+    /// every file.
+    static PARSERS: RefCell<HashMap<Language, Parser>> = RefCell::new(HashMap::new());
+}
+
+/// Runs `parse` with the calling thread's parser for `language`, creating one on
+/// first use.
+///
+/// Returns `None` only when the grammar cannot be configured on a new parser.
+pub(crate) fn with_parser<R>(
+    language: Language,
+    parse: impl FnOnce(&mut Parser) -> R,
+) -> Option<R> {
+    PARSERS.with(|parsers| {
+        let mut parsers = parsers.borrow_mut();
+        let parser = match parsers.entry(language) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => {
+                let mut parser = Parser::new();
+                parser.set_language(&grammar(language)).ok()?;
+                entry.insert(parser)
+            }
+        };
+        Some(parse(parser))
+    })
 }
 
 /// Advances `cursor` to the next node in depth-first pre-order, descending into
@@ -377,5 +439,94 @@ mod tests {
             let node = parse_file(path, *language).expect("file should parse");
             assert_eq!(node.language(), language);
         }
+    }
+
+    #[test]
+    fn text_of_borrows_from_the_source() {
+        let code = "let alpha = 1;\n";
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_rust::LANGUAGE.into())
+            .unwrap();
+        let tree = parser.parse(code, None).unwrap();
+        let name = tree.root_node().child(0).unwrap().child(1).unwrap();
+
+        let text = text_of(name, code);
+        assert_eq!(text, "alpha");
+        assert!(std::ptr::eq(
+            text.as_ptr(),
+            code[name.start_byte()..].as_ptr()
+        ));
+        // an out-of-range node still yields empty text rather than panicking
+        assert_eq!(text_of(name, "let"), "");
+    }
+
+    #[test]
+    fn insert_text_deduplicates_repeated_node_text() {
+        let code = "fn alpha() { helper(); }\nfn beta() {}\n";
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_rust::LANGUAGE.into())
+            .unwrap();
+        let tree = parser.parse(code, None).unwrap();
+
+        // every node the walk visits, with duplicates collapsed
+        let mut expected = HashSet::new();
+        let mut cursor = tree.root_node().walk();
+        loop {
+            expected.insert(text_of(cursor.node(), code).to_string());
+            if !advance(&mut cursor) {
+                break;
+            }
+        }
+
+        let mut set = HashSet::new();
+        let mut cursor = tree.root_node().walk();
+        loop {
+            insert_text(&mut set, cursor.node(), code);
+            if !advance(&mut cursor) {
+                break;
+            }
+        }
+
+        assert_eq!(set, expected);
+        assert!(set.contains("alpha"));
+        assert!(set.contains("beta"));
+        // a name used twice is still recorded once
+        assert!(code.matches("fn").count() > set.contains("fn") as usize);
+    }
+
+    /// Each thread keeps one parser per language, so a reused parser must not
+    /// leak anything from the file it parsed before.
+    #[test]
+    fn reused_parsers_do_not_leak_between_files() {
+        let dir = TempDir::new().unwrap();
+        let first = dir.path().join("first.py");
+        fs::write(
+            &first,
+            "import os\n\ndef alpha():\n    return os.getcwd()\n",
+        )
+        .unwrap();
+        let second = dir.path().join("second.py");
+        fs::write(&second, "import sys\n\ndef beta():\n    return sys.argv\n").unwrap();
+
+        let language = Language::Python;
+        let alpha = parse_file(&first, language).expect("first should parse");
+        let beta = parse_file(&second, language).expect("second should parse");
+
+        assert!(alpha.functions().contains("alpha"));
+        assert!(!alpha.functions().contains("beta"));
+        assert!(beta.functions().contains("beta"));
+        assert!(!beta.functions().contains("alpha"));
+        assert!(
+            alpha.imports().iter().any(|i| i.path() == "os"),
+            "imports: {:?}",
+            alpha.imports()
+        );
+        assert!(
+            !beta.imports().iter().any(|i| i.path() == "os"),
+            "imports: {:?}",
+            beta.imports()
+        );
     }
 }

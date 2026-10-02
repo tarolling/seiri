@@ -2,7 +2,7 @@ use clap::{Parser, crate_name, crate_version};
 use indicatif::{ProgressBar, ProgressStyle};
 use seiri_cli::core::defs::Language;
 use seiri_cli::core::resolvers::GraphBuilder;
-use seiri_cli::discovery::{detect_project_languages, walk_directory};
+use seiri_cli::discovery::{WalkOptions, detect_project_languages, walk_directory};
 use seiri_cli::export;
 use seiri_cli::gui::run_gui;
 use seiri_cli::parsers;
@@ -31,6 +31,9 @@ struct Cli {
     /// Ignore .gitignore files
     #[arg(long)]
     no_gitignore: bool,
+    /// Include vendored dependencies, such as node_modules and third-party sources
+    #[arg(long)]
+    include_vendored: bool,
     /// Overwrite the output file without prompting if it already exists
     #[arg(short, long)]
     force: bool,
@@ -173,6 +176,7 @@ fn run(args: Cli) -> Result<(), String> {
         verbose,
         version,
         no_gitignore,
+        include_vendored,
         force,
         update,
     } = args;
@@ -194,7 +198,13 @@ fn run(args: Cli) -> Result<(), String> {
 
     // Detect languages in file/project
     let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
-    let files_to_process = walk_directory(&project_path, no_gitignore);
+    let files_to_process = walk_directory(
+        &project_path,
+        WalkOptions {
+            no_gitignore,
+            include_vendored,
+        },
+    );
     let detected_languages = detect_project_languages(&files_to_process, &mut language_files)
         .ok_or_else(|| "No supported language files found in the project".to_string())?;
 
@@ -379,6 +389,7 @@ mod tests {
             verbose: false,
             version: false,
             no_gitignore: false,
+            include_vendored: false,
             force: false,
             update: false,
         };
@@ -401,6 +412,7 @@ mod tests {
             verbose: false,
             version: false,
             no_gitignore: false,
+            include_vendored: false,
             force: false,
             update: false,
         };
@@ -420,6 +432,7 @@ mod tests {
             verbose: false,
             version: false,
             no_gitignore: false,
+            include_vendored: false,
             force: false,
             update: false,
         };
@@ -434,6 +447,7 @@ mod tests {
             verbose: false,
             version: false,
             no_gitignore: false,
+            include_vendored: false,
             force: false,
             update: false,
         };
@@ -453,6 +467,7 @@ mod tests {
             verbose: true,
             version: false,
             no_gitignore: false,
+            include_vendored: false,
             force: false,
             update: false,
         };
@@ -474,7 +489,7 @@ mod tests {
         fs::write(&python_file, "def main():\n    return 0\n").unwrap();
 
         let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
-        let files_to_process = walk_directory(temp_dir.path(), true);
+        let files_to_process = walk_directory(temp_dir.path(), WalkOptions::new());
         detect_project_languages(&files_to_process, &mut language_files);
 
         let parsed = parse_project_files(&language_files, false);
@@ -530,6 +545,19 @@ mod tests {
 
         let args = Cli::try_parse_from(["seiri"]).unwrap();
         assert!(!args.force);
+    }
+
+    #[test]
+    fn test_vendored_flags_parse() {
+        let args = Cli::try_parse_from(["seiri"]).unwrap();
+        assert!(!args.no_gitignore);
+        assert!(!args.include_vendored);
+
+        let args = Cli::try_parse_from(["seiri", "--no-gitignore"]).unwrap();
+        assert!(args.no_gitignore);
+
+        let args = Cli::try_parse_from(["seiri", "--include-vendored"]).unwrap();
+        assert!(args.include_vendored);
     }
 
     #[test]
@@ -627,7 +655,7 @@ mod tests {
 
         // Parse all C++ files
         let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
-        let files_to_process = walk_directory(temp_dir.path(), true);
+        let files_to_process = walk_directory(temp_dir.path(), WalkOptions::new());
         detect_project_languages(&files_to_process, &mut language_files);
 
         // Only process C++ files
@@ -770,7 +798,7 @@ mod tests {
 
         // Parse files
         let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
-        let files_to_process = walk_directory(temp_dir.path(), true);
+        let files_to_process = walk_directory(temp_dir.path(), WalkOptions::new());
         let detected_languages = detect_project_languages(&files_to_process, &mut language_files)
             .expect("Should detect languages");
 
