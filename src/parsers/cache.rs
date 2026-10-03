@@ -11,6 +11,7 @@
 use crate::core::defs::{FileNode, Import, Language};
 use std::collections::{HashMap, HashSet};
 use std::env;
+use std::ffi::OsString;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -31,21 +32,40 @@ const CACHE_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// a disk. A project over this size is simply rescanned on every run.
 const MAX_CACHE_BYTES: usize = 512 * 1024 * 1024;
 
-/// The directory seiri keeps parse caches in.
+/// The directory seiri keeps parse caches in, or `None` when the environment
+/// names no such directory.
 ///
-/// [`ParseCache::load`] reads this; tests write their own directory instead.
-pub fn cache_dir() -> PathBuf {
-    if let Some(dir) = env::var_os("SEIRI_CACHE_DIR") {
-        return PathBuf::from(dir);
+/// [`ParseCache::load`] reads it; tests write their own directory instead.
+pub fn cache_dir() -> Option<PathBuf> {
+    cache_dir_from(
+        env::var_os("SEIRI_CACHE_DIR"),
+        env::var_os("XDG_CACHE_HOME"),
+        env::var_os("HOME"),
+    )
+}
+
+/// Picks the cache directory from the environment variables that name one,
+/// most explicit first.
+///
+/// A directory only counts when the current user owns it, so nothing another
+/// process owns (the system temp directory, say) can be read or overwritten
+/// through a planted symlink. An empty variable is treated as unset, so an
+/// exported-but-blank one cannot turn the cache into a relative path. Returns
+/// `None` when the environment names none.
+fn cache_dir_from(
+    override_dir: Option<OsString>,
+    xdg_cache_home: Option<OsString>,
+    home: Option<OsString>,
+) -> Option<PathBuf> {
+    let named = |value: Option<OsString>| value.filter(|value| !value.is_empty());
+
+    if let Some(dir) = named(override_dir) {
+        return Some(PathBuf::from(dir));
     }
-    if let Some(dir) = env::var_os("XDG_CACHE_HOME") {
-        return PathBuf::from(dir).join("seiri");
+    if let Some(dir) = named(xdg_cache_home) {
+        return Some(PathBuf::from(dir).join("seiri"));
     }
-    if let Some(home) = env::var_os("HOME") {
-        return PathBuf::from(home).join(".cache").join("seiri");
-    }
-    // No home directory to speak of, so a machine-wide location is the best left.
-    env::temp_dir().join("seiri-cache")
+    named(home).map(|home| PathBuf::from(home).join(".cache").join("seiri"))
 }
 
 /// The cache file for `project_root` inside `dir`.
@@ -198,9 +218,13 @@ pub struct ParseCache {
 }
 
 impl ParseCache {
-    /// Reads the cache for `project_root` from [`cache_dir`].
-    pub fn load(project_root: &Path) -> Self {
-        Self::load_from(project_root, &cache_dir())
+    /// Reads the cache for `project_root` from [`cache_dir`], or `None` when
+    /// the environment names no cache directory.
+    ///
+    /// Without a cache every run parses again, which is slower but always
+    /// correct.
+    pub fn load(project_root: &Path) -> Option<Self> {
+        Some(Self::load_from(project_root, &cache_dir()?))
     }
 
     /// Reads the cache for `project_root` from `dir`, or starts an empty one.
@@ -479,6 +503,45 @@ mod tests {
         let path = dir.join(name);
         fs::write(&path, contents).unwrap();
         path
+    }
+
+    #[test]
+    fn picks_the_cache_dir_from_the_environment() {
+        let override_dir = Some(OsString::from("/tmp/seiri-explicit"));
+        let xdg = Some(OsString::from("/home/user/.xdg"));
+        let home = Some(OsString::from("/home/user"));
+
+        assert_eq!(
+            cache_dir_from(override_dir.clone(), xdg.clone(), home.clone()),
+            Some(PathBuf::from("/tmp/seiri-explicit"))
+        );
+        assert_eq!(
+            cache_dir_from(None, xdg.clone(), home.clone()),
+            Some(PathBuf::from("/home/user/.xdg/seiri"))
+        );
+        assert_eq!(
+            cache_dir_from(None, None, home),
+            Some(PathBuf::from("/home/user/.cache/seiri"))
+        );
+    }
+
+    #[test]
+    fn has_no_cache_dir_without_one_of_its_own() {
+        assert_eq!(
+            cache_dir_from(None, None, None),
+            None,
+            "an environment naming no user-owned directory must not fall back to a shared one"
+        );
+        assert_eq!(
+            cache_dir_from(Some(OsString::new()), None, None),
+            None,
+            "an exported but blank variable names no directory"
+        );
+        assert_eq!(
+            cache_dir_from(None, None, Some(OsString::new())),
+            None,
+            "an exported but blank HOME names no directory"
+        );
     }
 
     #[test]

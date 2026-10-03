@@ -247,7 +247,14 @@ fn run(args: Cli) -> Result<(), String> {
         .ok_or_else(|| "No supported language files found in the project".to_string())?;
 
     // Parse files and collect Nodes, indexed by file path
-    let cache = (!no_cache).then(|| parsers::ParseCache::load(&project_path));
+    let cache = if no_cache {
+        None
+    } else {
+        parsers::ParseCache::load(&project_path)
+    };
+    if verbose && !no_cache && cache.is_none() {
+        println!("No cache directory available; every file will be parsed.");
+    }
     let (outcome, _cache) = parse_project_files(&language_files, cache, verbose);
     let node_map = outcome.into_nodes();
 
