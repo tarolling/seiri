@@ -34,6 +34,9 @@ struct Cli {
     /// Include vendored dependencies, such as node_modules and third-party sources
     #[arg(long)]
     include_vendored: bool,
+    /// Parse every file from scratch instead of reusing unchanged results from the cache
+    #[arg(long)]
+    no_cache: bool,
     /// Overwrite the output file without prompting if it already exists
     #[arg(short, long)]
     force: bool,
@@ -96,10 +99,15 @@ fn main() {
 }
 
 /// Parses every detected file in parallel, warning about the files it could not parse.
+///
+/// A `cache` lets unchanged files skip parsing entirely; without one, every
+/// file is parsed from scratch. The cache is handed back so a caller can see
+/// what it was worth.
 fn parse_project_files(
     language_files: &HashMap<PathBuf, Language>,
+    mut cache: Option<parsers::ParseCache>,
     verbose: bool,
-) -> parsers::ParseOutcome {
+) -> (parsers::ParseOutcome, Option<parsers::ParseCache>) {
     let progress = if !verbose && language_files.len() > PROGRESS_BAR_MIN_FILES {
         let bar = ProgressBar::new(language_files.len() as u64);
         bar.set_style(
@@ -113,8 +121,37 @@ fn parse_project_files(
         ProgressBar::hidden()
     };
 
-    let outcome = parsers::parse_all_parallel(language_files, || progress.inc(1));
+    let outcome = match cache.as_mut() {
+        Some(cache) => {
+            parsers::parse_all_parallel_cached(language_files, cache, || progress.inc(1))
+        }
+        None => parsers::parse_all_parallel(language_files, || progress.inc(1)),
+    };
     progress.finish_with_message("parsing complete");
+
+    // Writing the cache is what makes the next run cheap, so it happens
+    // whether or not anything is being reported. A cache seiri cannot write
+    // is not a failure: the scan worked, and the next run simply parses again.
+    if let Some(cache) = cache.as_mut() {
+        let written = cache.save();
+        if cache.is_dirty() {
+            eprintln!("Note: could not write the parse cache; the next run will parse again");
+        } else if verbose {
+            match &written {
+                Some(path) => println!("Wrote parse cache: {}", path.display()),
+                // Nothing was stale, so the file on disk is already correct.
+                None => println!("Parse cache unchanged: {}", cache.path().display()),
+            }
+        }
+
+        if verbose {
+            println!(
+                "Reused {} of {} parsed files from the cache",
+                cache.hits(),
+                language_files.len()
+            );
+        }
+    }
 
     if let Some(warning) = unparsed_files_warning(outcome.failed(), verbose) {
         eprintln!("{warning}");
@@ -132,7 +169,7 @@ fn parse_project_files(
         }
     }
 
-    outcome
+    (outcome, cache)
 }
 
 /// How many unparsed files are listed when not running verbosely.
@@ -177,6 +214,7 @@ fn run(args: Cli) -> Result<(), String> {
         version,
         no_gitignore,
         include_vendored,
+        no_cache,
         force,
         update,
     } = args;
@@ -209,7 +247,9 @@ fn run(args: Cli) -> Result<(), String> {
         .ok_or_else(|| "No supported language files found in the project".to_string())?;
 
     // Parse files and collect Nodes, indexed by file path
-    let node_map = parse_project_files(&language_files, verbose).into_nodes();
+    let cache = (!no_cache).then(|| parsers::ParseCache::load(&project_path));
+    let (outcome, _cache) = parse_project_files(&language_files, cache, verbose);
+    let node_map = outcome.into_nodes();
 
     // Build GraphNodes with multi-language support
     let mut graph_builder = GraphBuilder::new();
@@ -390,6 +430,7 @@ mod tests {
             version: false,
             no_gitignore: false,
             include_vendored: false,
+            no_cache: false,
             force: false,
             update: false,
         };
@@ -413,6 +454,7 @@ mod tests {
             version: false,
             no_gitignore: false,
             include_vendored: false,
+            no_cache: false,
             force: false,
             update: false,
         };
@@ -433,6 +475,7 @@ mod tests {
             version: false,
             no_gitignore: false,
             include_vendored: false,
+            no_cache: false,
             force: false,
             update: false,
         };
@@ -448,6 +491,7 @@ mod tests {
             version: false,
             no_gitignore: false,
             include_vendored: false,
+            no_cache: false,
             force: false,
             update: false,
         };
@@ -468,6 +512,7 @@ mod tests {
             version: false,
             no_gitignore: false,
             include_vendored: false,
+            no_cache: false,
             force: false,
             update: false,
         };
@@ -492,14 +537,47 @@ mod tests {
         let files_to_process = walk_directory(temp_dir.path(), WalkOptions::new());
         detect_project_languages(&files_to_process, &mut language_files);
 
-        let parsed = parse_project_files(&language_files, false);
+        let (parsed, cache) = parse_project_files(&language_files, None, false);
 
+        assert!(cache.is_none(), "no cache was asked for");
         assert_eq!(parsed.nodes().len(), language_files.len());
         assert!(parsed.failed().is_empty());
         // LOC is counted as newlines plus one, since the last line may be unterminated.
         assert_eq!(
             parsed.nodes().get(&rust_file).map(|node| node.loc()),
             Some(rust_contents.matches('\n').count() as u32 + 1)
+        );
+    }
+
+    #[test]
+    fn test_parse_project_files_reuses_the_cache_across_runs() {
+        let temp_dir = TempDir::new().unwrap();
+        let rust_file = temp_dir.path().join("lib.rs");
+        fs::write(&rust_file, "pub fn helper() -> u32 { 42 }\n").unwrap();
+
+        let mut language_files: HashMap<PathBuf, Language> = HashMap::new();
+        let files_to_process = walk_directory(temp_dir.path(), WalkOptions::new());
+        detect_project_languages(&files_to_process, &mut language_files);
+
+        // an explicit directory keeps the test out of the user's real cache
+        let cache_dir = temp_dir.path().join("cache");
+        let first = parsers::ParseCache::load_from(temp_dir.path(), &cache_dir);
+        let (cold, cache) = parse_project_files(&language_files, Some(first), false);
+        assert_eq!(cold.nodes().len(), 1);
+        assert_eq!(
+            cache.expect("cache returned").hits(),
+            0,
+            "a cold run has no hits"
+        );
+
+        let second = parsers::ParseCache::load_from(temp_dir.path(), &cache_dir);
+        let (warm, cache) = parse_project_files(&language_files, Some(second), false);
+        assert_eq!(warm.nodes().len(), 1);
+        assert_eq!(warm.nodes()[&rust_file].loc(), 2);
+        assert_eq!(
+            cache.expect("cache returned").hits(),
+            1,
+            "the file was reused"
         );
     }
 
@@ -552,12 +630,16 @@ mod tests {
         let args = Cli::try_parse_from(["seiri"]).unwrap();
         assert!(!args.no_gitignore);
         assert!(!args.include_vendored);
+        assert!(!args.no_cache);
 
         let args = Cli::try_parse_from(["seiri", "--no-gitignore"]).unwrap();
         assert!(args.no_gitignore);
 
         let args = Cli::try_parse_from(["seiri", "--include-vendored"]).unwrap();
         assert!(args.include_vendored);
+
+        let args = Cli::try_parse_from(["seiri", "--no-cache"]).unwrap();
+        assert!(args.no_cache);
     }
 
     #[test]

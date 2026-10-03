@@ -6,10 +6,13 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use tree_sitter::{Node, Parser, TreeCursor};
 
+pub mod cache;
 pub mod cpp;
 pub mod python;
 pub mod rust;
 pub mod typescript;
+
+pub use cache::ParseCache;
 
 /// Helper function to extract text from a node.
 ///
@@ -190,10 +193,76 @@ pub fn parse_all_parallel<F>(
 where
     F: Fn() + Sync + Send,
 {
+    parse_all_parallel_with(language_files, parse_file, on_file_parsed)
+}
+
+/// Parses every detected file, taking unchanged files from `cache` and adding
+/// the ones it parses.
+///
+/// `on_file_parsed` runs once for every file that produced a node, whether the
+/// cache had it or not, so a progress bar still fills.
+///
+/// The caller owns the cache's lifetime and decides when to write it back with
+/// [`ParseCache::save`].
+pub fn parse_all_parallel_cached<F>(
+    language_files: &HashMap<PathBuf, Language>,
+    cache: &mut ParseCache,
+    on_file_parsed: F,
+) -> ParseOutcome
+where
+    F: Fn() + Sync + Send,
+{
+    // The lookup is serial on purpose: one `stat` per file is nothing next to
+    // a parse, and keeping the cache out of the parallel closure means it needs
+    // no locking, so nothing is contended across the thread pool.
+    let mut results = Vec::with_capacity(language_files.len());
+    let mut missing = Vec::new();
+    for path in language_files.keys() {
+        match cache.get(path) {
+            Some(node) => {
+                on_file_parsed();
+                results.push((path.to_path_buf(), Some(node)));
+            }
+            None => missing.push(path),
+        }
+    }
+
+    let parsed = missing
+        .par_iter()
+        .map(|&path| {
+            let node = parse_file(path, language_files[path]);
+            if node.is_some() {
+                on_file_parsed();
+            }
+            (path.to_path_buf(), node)
+        })
+        .collect::<Vec<_>>();
+
+    for (path, node) in &parsed {
+        if let Some(node) = node {
+            cache.record(path, node);
+        }
+    }
+    results.extend(parsed);
+
+    split_results(results)
+}
+
+/// Parses every detected file across rayon's thread pool, reading each file
+/// through `parse`.
+fn parse_all_parallel_with<P, F>(
+    language_files: &HashMap<PathBuf, Language>,
+    parse: P,
+    on_file_parsed: F,
+) -> ParseOutcome
+where
+    P: Fn(&Path, Language) -> Option<FileNode> + Sync + Send,
+    F: Fn() + Sync + Send,
+{
     let results = language_files
         .par_iter()
         .map(|(path, &language)| {
-            let node = parse_file(path, language);
+            let node = parse(path, language);
             if node.is_some() {
                 on_file_parsed();
             }
@@ -439,6 +508,126 @@ mod tests {
             let node = parse_file(path, *language).expect("file should parse");
             assert_eq!(node.language(), language);
         }
+    }
+
+    #[test]
+    fn cached_parse_matches_uncached_parse() {
+        let dir = TempDir::new().unwrap();
+        let language_files = write_project(dir.path());
+        let cache_dir = dir.path().join("cache");
+
+        let mut cache = ParseCache::load_from(dir.path(), &cache_dir);
+        let cold = parse_all_parallel_cached(&language_files, &mut cache, || {}).into_nodes();
+        cache.save();
+        assert_eq!(cache.hits(), 0, "nothing was cached yet");
+
+        let mut warm = ParseCache::load_from(dir.path(), &cache_dir);
+        let cached = parse_all_parallel_cached(&language_files, &mut warm, || {}).into_nodes();
+
+        assert_eq!(warm.hits(), language_files.len(), "every file was reused");
+        assert_eq!(cold.len(), cached.len());
+        for (path, cold_node) in &cold {
+            let cached_node = cached.get(path).expect("same files come back");
+            assert_eq!(cold_node.loc(), cached_node.loc());
+            assert_eq!(cold_node.language(), cached_node.language());
+            assert_eq!(cold_node.imports(), cached_node.imports());
+            assert_eq!(cold_node.functions(), cached_node.functions());
+            assert_eq!(cold_node.containers(), cached_node.containers());
+            assert_eq!(
+                cold_node.external_references(),
+                cached_node.external_references()
+            );
+        }
+    }
+
+    #[test]
+    fn cached_parse_reports_a_file_parsed_exactly_once() {
+        let dir = TempDir::new().unwrap();
+        let language_files = write_project(dir.path());
+        let cache_dir = dir.path().join("cache");
+
+        for _ in 0..3 {
+            let reported = AtomicUsize::new(0);
+            let mut cache = ParseCache::load_from(dir.path(), &cache_dir);
+            let outcome = parse_all_parallel_cached(&language_files, &mut cache, || {
+                reported.fetch_add(1, Ordering::Relaxed);
+            });
+            cache.save();
+
+            assert_eq!(
+                reported.load(Ordering::Relaxed),
+                language_files.len(),
+                "every file counts once whether cached or parsed"
+            );
+            assert_eq!(outcome.nodes().len(), language_files.len());
+        }
+    }
+
+    #[test]
+    fn cached_parse_reparses_a_file_that_changed() {
+        let dir = TempDir::new().unwrap();
+        let language_files = write_project(dir.path());
+        let cache_dir = dir.path().join("cache");
+
+        let mut cache = ParseCache::load_from(dir.path(), &cache_dir);
+        parse_all_parallel_cached(&language_files, &mut cache, || {});
+        cache.save();
+
+        let edited = dir.path().join("gamma.py");
+        fs::write(
+            &edited,
+            "import os\n\ndef renamed():\n    return os.getcwd()\n",
+        )
+        .unwrap();
+
+        let mut warm = ParseCache::load_from(dir.path(), &cache_dir);
+        let outcome = parse_all_parallel_cached(&language_files, &mut warm, || {});
+
+        assert_eq!(
+            warm.hits(),
+            language_files.len() - 1,
+            "only the edit re-parsed"
+        );
+        let node = outcome
+            .nodes()
+            .get(&edited)
+            .expect("the edited file is present");
+        assert!(node.functions().contains("renamed"));
+        assert!(!node.functions().contains("gamma"));
+    }
+
+    #[test]
+    fn uncached_parse_ignores_an_existing_cache() {
+        // the parsing benchmark measures `parse_all_parallel`, so it must keep
+        // measuring real parses even when a cache exists
+        let dir = TempDir::new().unwrap();
+        let language_files = write_project(dir.path());
+
+        let mut cache = ParseCache::load_from(dir.path(), &dir.path().join("cache"));
+        parse_all_parallel_cached(&language_files, &mut cache, || {});
+        cache.save();
+
+        let parsed = parse_all_parallel(&language_files, || {});
+        assert_eq!(parsed.nodes().len(), language_files.len());
+    }
+
+    #[test]
+    fn cached_parse_reports_files_it_could_not_read() {
+        let dir = TempDir::new().unwrap();
+        let mut language_files = write_project(dir.path());
+        let missing = dir.path().join("missing.rs");
+        language_files.insert(missing.clone(), Language::Rust);
+        let cache_dir = dir.path().join("cache");
+
+        let mut cache = ParseCache::load_from(dir.path(), &cache_dir);
+        let outcome = parse_all_parallel_cached(&language_files, &mut cache, || {});
+        assert_eq!(outcome.failed(), std::slice::from_ref(&missing));
+        cache.save();
+
+        // a file that never parsed must not be cached as if it had
+        let mut warm = ParseCache::load_from(dir.path(), &cache_dir);
+        assert!(warm.get(&missing).is_none(), "a missing file was cached");
+        assert_eq!(warm.len(), language_files.len() - 1);
     }
 
     #[test]
