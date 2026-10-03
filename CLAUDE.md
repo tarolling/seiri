@@ -126,7 +126,9 @@ implementation, and `src/main.rs` is a thin CLI over it.
    - File path and lines of code (LOC).
    - Imports, each marked local or external.
    - Defined functions.
-   - Defined containers (classes, structs, and so on).
+   - Defined type names: Rust structs, enums, and traits; Python classes;
+     TypeScript classes, interfaces, enums, and type aliases; C++ classes,
+     structs, unions, and enums.
    - External references.
 
    `src/parsers.rs` drives them. `parse_file` dispatches by language, and
