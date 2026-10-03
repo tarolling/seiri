@@ -6,6 +6,8 @@ use std::path::{Component, Path, PathBuf};
 #[derive(Default)]
 pub struct TypeScriptResolver {
     project_root: PathBuf,
+    /// `project_root`, canonicalized once so candidate checks cost one syscall
+    canonical_root: Option<PathBuf>,
 }
 
 impl TypeScriptResolver {
@@ -39,7 +41,9 @@ impl TypeScriptResolver {
 
         for ext in Language::TypeScript.extensions() {
             let path_with_ext = normalized_path.with_extension(ext);
-            if path_with_ext.is_file() && is_within_project(&path_with_ext, &self.project_root) {
+            if path_with_ext.is_file()
+                && is_within_project(&path_with_ext, self.canonical_root.as_deref())
+            {
                 return Some(path_with_ext);
             }
         }
@@ -48,7 +52,9 @@ impl TypeScriptResolver {
         if normalized_path.is_dir() {
             for ext in Language::TypeScript.extensions() {
                 let index_path = normalized_path.join(format!("index.{ext}"));
-                if index_path.is_file() && is_within_project(&index_path, &self.project_root) {
+                if index_path.is_file()
+                    && is_within_project(&index_path, self.canonical_root.as_deref())
+                {
                     return Some(index_path);
                 }
             }
@@ -61,6 +67,7 @@ impl TypeScriptResolver {
 impl LanguageResolver for TypeScriptResolver {
     fn build_module_map(&mut self, _files: &[PathBuf], project_root: &Path) {
         self.project_root = project_root.to_path_buf();
+        self.canonical_root = project_root.canonicalize().ok();
     }
 
     fn resolve_import(&self, import_path: &str, from_file: &Path) -> Option<PathBuf> {

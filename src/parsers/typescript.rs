@@ -1,10 +1,9 @@
 use crate::core::defs::{FileNode, Import, Language};
-use crate::parsers::{advance, get_text};
+use crate::parsers::{advance, get_text, insert_text, with_parser};
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::sync::LazyLock;
-use tree_sitter::Parser;
 use tree_sitter_typescript as ts_typescript;
 
 /// Node kinds this parser acts on, as numeric ids so the tree walk compares
@@ -101,11 +100,7 @@ pub fn parse_typescript_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
     let code = fs::read_to_string(&path).ok()?;
     let loc = code.matches('\n').count() as u32 + 1;
 
-    let mut parser = Parser::new();
-    parser
-        .set_language(&ts_typescript::LANGUAGE_TYPESCRIPT.into())
-        .ok()?;
-    let tree = parser.parse(&code, None)?;
+    let tree = with_parser(Language::TypeScript, |parser| parser.parse(&code, None))??;
     let root_node = tree.root_node();
 
     let mut imports = HashSet::new();
@@ -132,7 +127,7 @@ pub fn parse_typescript_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
             // `function hello() {}` and `method_definition` both insert function names
             id if id == kinds.function_declaration || id == kinds.method_definition => {
                 if let Some(name_node) = node.child_by_field_name("name") {
-                    functions.insert(get_text(name_node, &code));
+                    insert_text(&mut functions, name_node, &code);
                 }
             }
 
@@ -153,7 +148,7 @@ pub fn parse_typescript_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
                         }
                         && let Some(name_node) = child.child_by_field_name("name")
                     {
-                        functions.insert(get_text(name_node, &code));
+                        insert_text(&mut functions, name_node, &code);
                     }
                 }
             }
@@ -161,19 +156,19 @@ pub fn parse_typescript_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
             // `class C {}`, `interface I {}`, `enum E {}`, `type T = ...`
             id if kinds.is_declaration_kind(id) => {
                 if let Some(name_node) = node.child_by_field_name("name") {
-                    containers.insert(get_text(name_node, &code));
+                    insert_text(&mut containers, name_node, &code);
                 }
             }
 
             // `obj.prop`, `this.field`, etc.
             id if id == kinds.member_expression => {
-                external_references.insert(get_text(node, &code));
+                insert_text(&mut external_references, node, &code);
             }
 
             // `foo()`, `obj.method()` - record the callee, not the whole call
             id if id == kinds.call_expression => {
                 if let Some(function_node) = node.child_by_field_name("function") {
-                    external_references.insert(get_text(function_node, &code));
+                    insert_text(&mut external_references, function_node, &code);
                 }
             }
 

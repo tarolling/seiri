@@ -1,10 +1,9 @@
 use crate::core::defs::{FileNode, Import, Language};
-use crate::parsers::{advance, descend_into, get_text, skip_children};
+use crate::parsers::{advance, descend_into, get_text, insert_text, skip_children, with_parser};
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::sync::LazyLock;
-use tree_sitter::Parser;
 use tree_sitter_rust as ts_rust;
 
 /// Node kinds this parser acts on, as numeric ids so the tree walk compares
@@ -224,8 +223,7 @@ fn parser_loop<P: AsRef<Path>>(
                 let mut child_cursor = node.walk();
                 for child in node.children(&mut child_cursor) {
                     if child.kind_id() == kinds.identifier {
-                        let name = get_text(child, code);
-                        functions.insert(name);
+                        insert_text(&mut functions, child, code);
                     }
                 }
             }
@@ -233,8 +231,7 @@ fn parser_loop<P: AsRef<Path>>(
                 let mut child_cursor = node.walk();
                 for child in node.children(&mut child_cursor) {
                     if child.kind_id() == kinds.type_identifier {
-                        let name = get_text(child, code);
-                        containers.insert(name);
+                        insert_text(&mut containers, child, code);
                     }
                 }
             }
@@ -245,8 +242,7 @@ fn parser_loop<P: AsRef<Path>>(
             }
             // For external references, look for scoped identifiers (e.g., foo::bar)
             id if id == kinds.scoped_identifier => {
-                let text = get_text(node, code);
-                external_references.insert(text);
+                insert_text(&mut external_references, node, code);
             }
             _ => {}
         }
@@ -280,9 +276,7 @@ fn parser_loop<P: AsRef<Path>>(
 pub fn parse_rust_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
     let code = fs::read_to_string(&path).ok()?;
 
-    let mut parser = Parser::new();
-    parser.set_language(&ts_rust::LANGUAGE.into()).ok()?;
-    let tree = parser.parse(&code, None)?;
+    let tree = with_parser(Language::Rust, |parser| parser.parse(&code, None))??;
     let root_node = tree.root_node();
 
     parser_loop(path, &code, root_node)

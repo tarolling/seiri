@@ -1,10 +1,10 @@
 use crate::core::defs::{FileNode, Import, Language};
-use crate::parsers::{advance, get_text};
+use crate::parsers::{advance, get_text, insert_text, with_parser};
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::sync::LazyLock;
-use tree_sitter::{Node, Parser};
+use tree_sitter::Node;
 use tree_sitter_cpp as ts_cpp;
 
 /// Node kinds this parser acts on, as numeric ids so the tree walk compares
@@ -328,9 +328,7 @@ pub fn parse_cpp_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
     let code = fs::read_to_string(&path).ok()?;
     let loc = code.matches('\n').count() as u32 + 1;
 
-    let mut parser = Parser::new();
-    parser.set_language(&ts_cpp::LANGUAGE.into()).ok()?;
-    let tree = parser.parse(&code, None)?;
+    let tree = with_parser(Language::Cpp, |parser| parser.parse(&code, None))??;
     let root_node = tree.root_node();
 
     let mut imports = HashSet::new();
@@ -365,12 +363,12 @@ pub fn parse_cpp_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
             }
             // Qualified identifiers, e.g. `ns::helper`, `Foo::method`
             id if id == kinds.qualified_identifier => {
-                external_references.insert(get_text(node, &code));
+                insert_text(&mut external_references, node, &code);
             }
             // `foo()`, `ns::helper()` - record the callee, not the whole call
             id if id == kinds.call_expression => {
                 if let Some(function_node) = node.child_by_field_name("function") {
-                    external_references.insert(get_text(function_node, &code));
+                    insert_text(&mut external_references, function_node, &code);
                 }
             }
             // Type references (parameter/variable/return types, etc.), but not
@@ -381,7 +379,7 @@ pub fn parse_cpp_file<P: AsRef<Path>>(path: P) -> Option<FileNode> {
                         && parent.child_by_field_name("name") == Some(node)
                 });
                 if !is_declaration_name {
-                    external_references.insert(get_text(node, &code));
+                    insert_text(&mut external_references, node, &code);
                 }
             }
             _ => {}

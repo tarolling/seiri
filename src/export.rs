@@ -19,6 +19,16 @@ const MIN_NODE_RADIUS: f32 = 20.0;
 const MAX_NODE_RADIUS: f32 = 40.0;
 const MARGIN: f32 = 50.0;
 
+/// The languages to draw in the legend, in a fixed order.
+///
+/// Iterating the `HashSet` directly yields a different order on every run,
+/// which makes repeated exports of the same graph differ byte for byte.
+fn legend_order(detected_languages: &HashSet<Language>) -> Vec<Language> {
+    let mut languages: Vec<Language> = detected_languages.iter().copied().collect();
+    languages.sort_by_key(|language| language.to_string());
+    languages
+}
+
 pub fn export_graph_as_svg(
     graph_nodes: &[GraphNode],
     output_path: &Path,
@@ -149,7 +159,7 @@ pub fn export_graph_as_svg(
     let legend_x = MARGIN;
     let legend_spacing = 25.0;
 
-    for (i, lang) in detected_languages.iter().enumerate() {
+    for (i, lang) in legend_order(&detected_languages).iter().enumerate() {
         let y = legend_y + (i as f32 * legend_spacing);
 
         // Legend dot
@@ -377,7 +387,7 @@ fn render_graph_pixmap(
     let legend_y = MARGIN;
     let legend_spacing = 25.0;
 
-    for (i, lang) in detected_languages.iter().enumerate() {
+    for (i, lang) in legend_order(&detected_languages).iter().enumerate() {
         let y = legend_y + (i as f32 * legend_spacing);
 
         // Legend dot
@@ -514,7 +524,100 @@ fn load_font() -> Result<Font, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::defs::FileNode;
+    use std::path::PathBuf;
     use tempfile::TempDir;
+
+    #[test]
+    fn legend_order_is_sorted_and_stable() {
+        let languages: HashSet<Language> = [
+            Language::TypeScript,
+            Language::Cpp,
+            Language::Python,
+            Language::Rust,
+        ]
+        .into_iter()
+        .collect();
+
+        // the same set must always produce the same legend, whatever order
+        // the set itself happens to iterate in
+        let first = legend_order(&languages);
+        let second = legend_order(&languages);
+        assert_eq!(first, second);
+        assert_eq!(
+            first,
+            vec![
+                Language::Cpp,
+                Language::Python,
+                Language::Rust,
+                Language::TypeScript
+            ]
+        );
+        assert!(legend_order(&HashSet::new()).is_empty());
+    }
+
+    /// The SVG for an unchanged graph must be byte-identical across runs,
+    /// so a legend that follows `HashSet` iteration order cannot reorder.
+    #[test]
+    fn repeated_svg_exports_of_one_graph_are_byte_identical() {
+        let dir = TempDir::new().unwrap();
+        let languages: HashSet<Language> = [Language::Python, Language::Cpp, Language::Rust]
+            .into_iter()
+            .collect();
+        let nodes = vec![
+            GraphNode::new(
+                FileNode::new(
+                    PathBuf::from("alpha.cpp"),
+                    10,
+                    Language::Cpp,
+                    HashSet::new(),
+                    HashSet::new(),
+                    HashSet::new(),
+                    HashSet::new(),
+                ),
+                Vec::new(),
+            ),
+            GraphNode::new(
+                FileNode::new(
+                    PathBuf::from("beta.py"),
+                    20,
+                    Language::Python,
+                    HashSet::new(),
+                    HashSet::new(),
+                    HashSet::new(),
+                    HashSet::new(),
+                ),
+                Vec::new(),
+            ),
+            GraphNode::new(
+                FileNode::new(
+                    PathBuf::from("gamma.rs"),
+                    30,
+                    Language::Rust,
+                    HashSet::new(),
+                    HashSet::new(),
+                    HashSet::new(),
+                    HashSet::new(),
+                ),
+                Vec::new(),
+            ),
+        ];
+
+        let mut exports = Vec::new();
+        for run in 0..3 {
+            let path = dir.path().join(format!("graph{run}.svg"));
+            export_graph_as_svg(&nodes, &path, languages.clone()).unwrap();
+            exports.push(std::fs::read_to_string(&path).unwrap());
+        }
+
+        assert_eq!(exports[0], exports[1]);
+        assert_eq!(exports[1], exports[2]);
+        // the legend lists the languages by name, in sorted order
+        let cpp = exports[0].find("C++").unwrap();
+        let python = exports[0].find("Python").unwrap();
+        let rust = exports[0].find("Rust").unwrap();
+        assert!(cpp < python && python < rust, "legend is not sorted");
+    }
 
     #[test]
     fn empty_graph_nodes_skip_file_creation() {

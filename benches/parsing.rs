@@ -22,7 +22,7 @@
 //! slow run is never reported as a failure.
 
 use seiri_cli::core::defs::Language;
-use seiri_cli::discovery::{detect_project_languages, walk_directory};
+use seiri_cli::discovery::{WalkOptions, detect_project_languages, walk_directory};
 use seiri_cli::parsers::parse_all_parallel;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -232,7 +232,7 @@ fn build_corpus(language: Language, config: &Config) -> Result<Option<Corpus>, S
     };
 
     let mut files = HashMap::new();
-    let discovered = walk_directory(root, false);
+    let discovered = walk_directory(root, WalkOptions::new());
     // `detect_project_languages` returns None when nothing is supported; this
     // benchmark is only ever run on supported projects.
     let _ = detect_project_languages(&discovered, &mut files);
