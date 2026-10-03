@@ -13,15 +13,21 @@ pub(crate) mod python;
 pub(crate) mod rust;
 pub(crate) mod typescript;
 
-fn is_within_project(candidate: &Path, project_root: &Path) -> bool {
-    let Ok(candidate) = candidate.canonicalize() else {
-        return false;
-    };
-    let Ok(project_root) = project_root.canonicalize() else {
+/// Whether `candidate` resolves to a path inside the project.
+///
+/// `canonical_root` is the project's already-canonicalized root, captured once
+/// by `build_module_map`. This runs once per include candidate, so
+/// canonicalizing the root again here would double the syscalls for nothing.
+/// `None` means the root could not be canonicalized, in which case no candidate
+/// can be trusted to be inside it.
+fn is_within_project(candidate: &Path, canonical_root: Option<&Path>) -> bool {
+    let Some(canonical_root) = canonical_root else {
         return false;
     };
 
-    candidate.starts_with(project_root)
+    candidate
+        .canonicalize()
+        .is_ok_and(|candidate| candidate.starts_with(canonical_root))
 }
 
 /// Module resolution trait
@@ -139,6 +145,27 @@ impl GraphBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn is_within_project_needs_a_canonical_root() {
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        let inside = dir.path().join("inside.h");
+        std::fs::write(&inside, "// inside").unwrap();
+        let outside = dir.path().parent().unwrap().join("outside.h");
+
+        let root = dir.path().canonicalize().unwrap();
+        assert!(is_within_project(&inside, Some(&root)));
+        assert!(!is_within_project(&outside, Some(&root)));
+        // a candidate that does not exist is not inside anything
+        assert!(!is_within_project(
+            &dir.path().join("missing.h"),
+            Some(&root)
+        ));
+        // without a canonical root nothing can be trusted
+        assert!(!is_within_project(&inside, None));
+    }
 
     fn rust_file(path: &str, imports: &[&str]) -> (PathBuf, FileNode) {
         let path = PathBuf::from(path);

@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 pub struct PythonResolver {
     /// Project root directory
     project_root: PathBuf,
+    /// `project_root`, canonicalized once so candidate checks cost one syscall
+    canonical_root: Option<PathBuf>,
 }
 
 impl PythonResolver {
@@ -21,14 +23,16 @@ impl PythonResolver {
 
         // 1. Check if it's a '.py' file (e.g., /root/my/module/name.py)
         potential_path.set_extension("py");
-        if potential_path.is_file() && is_within_project(&potential_path, &self.project_root) {
+        if potential_path.is_file()
+            && is_within_project(&potential_path, self.canonical_root.as_deref())
+        {
             return Some(potential_path);
         }
 
         // 2. Check if it's a package (e.g., /root/my/module/name/__init__.py)
         potential_path.set_extension(""); // Unset '.py' before joining
         let init_path = potential_path.join("__init__.py");
-        if init_path.is_file() && is_within_project(&init_path, &self.project_root) {
+        if init_path.is_file() && is_within_project(&init_path, self.canonical_root.as_deref()) {
             return Some(init_path);
         }
 
@@ -55,7 +59,9 @@ impl PythonResolver {
         // If module_spec is empty, we are importing the package itself (e.g., from . import foo)
         if module_spec.is_empty() {
             let init_path = base_dir.join("__init__.py");
-            return if init_path.is_file() && is_within_project(&init_path, &self.project_root) {
+            return if init_path.is_file()
+                && is_within_project(&init_path, self.canonical_root.as_deref())
+            {
                 Some(init_path)
             } else {
                 None
@@ -68,12 +74,13 @@ impl PythonResolver {
 
         // Check for .py file or package
         target_path.set_extension("py");
-        if target_path.is_file() && is_within_project(&target_path, &self.project_root) {
+        if target_path.is_file() && is_within_project(&target_path, self.canonical_root.as_deref())
+        {
             return Some(target_path);
         }
         target_path.set_extension("");
         let init_path = target_path.join("__init__.py");
-        if init_path.is_file() && is_within_project(&init_path, &self.project_root) {
+        if init_path.is_file() && is_within_project(&init_path, self.canonical_root.as_deref()) {
             return Some(init_path);
         }
 
@@ -84,6 +91,7 @@ impl PythonResolver {
 impl LanguageResolver for PythonResolver {
     fn build_module_map(&mut self, _files: &[PathBuf], project_root: &Path) {
         self.project_root = project_root.to_path_buf();
+        self.canonical_root = project_root.canonicalize().ok();
     }
 
     fn resolve_import(&self, import_path: &str, from_file: &Path) -> Option<PathBuf> {

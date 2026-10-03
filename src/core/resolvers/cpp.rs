@@ -2,6 +2,23 @@ use super::{LanguageResolver, is_within_project};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+/// Extensions tried when an include names a header without one.
+const HEADER_EXTENSIONS: &[&str] = &[".h", ".hpp", ".hxx", ".h++", ".cc", ".cpp", ".cxx", ".c++"];
+
+/// Directories searched for a header, relative to the project root, in the
+/// order a project conventionally lays them out.
+const COMMON_INCLUDE_DIRS: &[&str] = &[
+    "include",
+    "include/public",
+    "include/internal",
+    "src",
+    "src/include",
+    "public",
+    "private",
+    "headers",
+    "inc",
+];
+
 /// C++ include resolver with caching
 #[derive(Default)]
 pub struct CppResolver {
@@ -9,6 +26,12 @@ pub struct CppResolver {
     include_to_file: HashMap<String, PathBuf>,
     /// Project root directory
     project_root: PathBuf,
+    /// `project_root`, canonicalized once so candidate checks cost one syscall
+    canonical_root: Option<PathBuf>,
+    /// The project root and whichever [`COMMON_INCLUDE_DIRS`] actually exist.
+    /// Resolving one include used to `stat` every candidate in the list, so
+    /// a project missing most of them paid for all of them on every include.
+    root_search_dirs: Vec<PathBuf>,
 }
 
 impl CppResolver {
@@ -67,6 +90,48 @@ impl CppResolver {
         }
     }
 
+    /// The directories to search for an include included from `from_file`,
+    /// ordered by priority: the including file's own directory, then the
+    /// project-level directories, then the file's parent directories.
+    fn search_dirs(&self, from_file: &Path) -> Vec<PathBuf> {
+        // Build search directories, ordered by priority
+        let mut search_dirs = Vec::with_capacity(self.root_search_dirs.len() + 6);
+        let push_new = |search_dirs: &mut Vec<PathBuf>, dir: PathBuf| {
+            if !search_dirs.contains(&dir) {
+                search_dirs.push(dir);
+            }
+        };
+
+        // 1. Same directory as the including file (highest priority for local includes)
+        if let Some(parent) = from_file.parent() {
+            push_new(&mut search_dirs, parent.to_path_buf());
+        }
+
+        // 2. Project root
+        // 3. Common include directories, both already narrowed to the ones that
+        // exist so that a missing directory is not probed once per include
+        for dir in &self.root_search_dirs {
+            push_new(&mut search_dirs, dir.clone());
+        }
+
+        // 4. Parent directories (for multi-level projects)
+        if let Some(parent) = from_file.parent() {
+            let mut current_parent = parent.to_path_buf();
+            for _ in 0..5 {
+                let Some(new_parent) = current_parent.parent() else {
+                    break;
+                };
+                if new_parent == current_parent {
+                    break;
+                }
+                push_new(&mut search_dirs, current_parent.clone());
+                current_parent = new_parent.to_path_buf();
+            }
+        }
+
+        search_dirs
+    }
+
     /// Try to find a file in common include directories.
     ///
     /// The caller (GraphBuilder::build_graph_edges) only invokes this for
@@ -77,76 +142,28 @@ impl CppResolver {
     /// (e.g. "windows.h", "string.h").
     fn find_include_file(&self, include_path: &str, from_file: &Path) -> Option<PathBuf> {
         let normalized = self.normalize_path(include_path);
-
-        // Build search directories, ordered by priority
-        let mut search_dirs = Vec::new();
-
-        // 1. Same directory as the including file (highest priority for local includes)
-        if let Some(parent) = from_file.parent() {
-            search_dirs.push(parent.to_path_buf());
-        }
-
-        // 2. Project root
-        search_dirs.push(self.project_root.clone());
-
-        // 3. Common include directories
-        let common_include_dirs = vec![
-            "include",
-            "include/public",
-            "include/internal",
-            "src",
-            "src/include",
-            "public",
-            "private",
-            "headers",
-            "inc",
-        ];
-
-        for dir_name in common_include_dirs {
-            let dir = self.project_root.join(dir_name);
-            if !search_dirs.contains(&dir) {
-                search_dirs.push(dir);
-            }
-        }
-
-        // 4. Parent directories (for multi-level projects)
-        if let Some(parent) = from_file.parent() {
-            let mut current_parent = parent.to_path_buf();
-            let mut depth = 0;
-            loop {
-                if depth >= 5 {
-                    break;
-                }
-                if let Some(new_parent) = current_parent.parent() {
-                    if new_parent == current_parent {
-                        break;
-                    }
-                    if !search_dirs.contains(&current_parent) {
-                        search_dirs.push(current_parent.clone());
-                    }
-                    current_parent = new_parent.to_path_buf();
-                } else {
-                    break;
-                }
-                depth += 1;
-            }
-        }
+        // An include written without an extension also names a file with one
+        let extensions: &[&str] = if normalized.contains('.') {
+            &[]
+        } else {
+            HEADER_EXTENSIONS
+        };
 
         // Search for the include file in order of priority
-        for search_dir in search_dirs {
+        for search_dir in self.search_dirs(from_file) {
             let candidate = search_dir.join(&normalized);
-            if candidate.is_file() && is_within_project(&candidate, &self.project_root) {
+            if candidate.is_file() && is_within_project(&candidate, self.canonical_root.as_deref())
+            {
                 return Some(candidate);
             }
 
             // Also check with different extensions for header files without extension
-            if !normalized.contains('.') {
-                let extensions = vec![".h", ".hpp", ".hxx", ".h++", ".cc", ".cpp", ".cxx", ".c++"];
-                for ext in extensions {
-                    let with_ext = search_dir.join(format!("{}{}", normalized, ext));
-                    if with_ext.is_file() && is_within_project(&with_ext, &self.project_root) {
-                        return Some(with_ext);
-                    }
+            for ext in extensions {
+                let with_ext = search_dir.join(format!("{}{}", normalized, ext));
+                if with_ext.is_file()
+                    && is_within_project(&with_ext, self.canonical_root.as_deref())
+                {
+                    return Some(with_ext);
                 }
             }
         }
@@ -158,6 +175,15 @@ impl CppResolver {
 impl LanguageResolver for CppResolver {
     fn build_module_map(&mut self, files: &[PathBuf], project_root: &Path) {
         self.project_root = project_root.to_path_buf();
+        self.canonical_root = project_root.canonicalize().ok();
+        self.root_search_dirs = std::iter::once(project_root.to_path_buf())
+            .chain(
+                COMMON_INCLUDE_DIRS
+                    .iter()
+                    .map(|dir| project_root.join(dir))
+                    .filter(|dir| dir.is_dir()),
+            )
+            .collect();
 
         for file_path in files {
             // Map relative paths from project root to file paths
@@ -185,6 +211,75 @@ impl LanguageResolver for CppResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn build_module_map_keeps_only_include_dirs_that_exist() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        let project_root = dir.path();
+        fs::create_dir(project_root.join("include")).unwrap();
+        fs::create_dir(project_root.join("src")).unwrap();
+
+        let mut resolver = CppResolver::new();
+        resolver.build_module_map(&[], project_root);
+
+        // the project root first, then the conventional directories that exist
+        assert_eq!(resolver.root_search_dirs[0], project_root);
+        assert!(
+            resolver
+                .root_search_dirs
+                .contains(&project_root.join("include"))
+        );
+        assert!(
+            resolver
+                .root_search_dirs
+                .contains(&project_root.join("src"))
+        );
+        // the eight other conventional directories are never stat'ed again
+        assert!(
+            !resolver
+                .root_search_dirs
+                .contains(&project_root.join("headers"))
+        );
+        assert!(
+            !resolver
+                .root_search_dirs
+                .contains(&project_root.join("public"))
+        );
+        assert!(
+            resolver.root_search_dirs.len() < COMMON_INCLUDE_DIRS.len() + 1,
+            "search dirs: {:?}",
+            resolver.root_search_dirs
+        );
+    }
+
+    #[test]
+    fn search_dirs_put_the_including_directory_first() {
+        use tempfile::TempDir;
+
+        let dir = TempDir::new().unwrap();
+        let project_root = dir.path().join("project");
+        std::fs::create_dir_all(project_root.join("include")).unwrap();
+        let from_file = project_root.join("modules/core/src/alpha.cpp");
+
+        let mut resolver = CppResolver::new();
+        resolver.build_module_map(&[], &project_root);
+
+        let dirs = resolver.search_dirs(&from_file);
+
+        assert_eq!(dirs[0], from_file.parent().unwrap());
+        assert!(dirs.contains(&project_root));
+        assert!(dirs.contains(&project_root.join("include")));
+        // the file's parents follow, nearest first, and each appears once
+        let core = dirs
+            .iter()
+            .position(|d| *d == project_root.join("modules/core"));
+        let modules = dirs.iter().position(|d| *d == project_root.join("modules"));
+        assert!(core < modules, "parents out of order: {dirs:?}");
+        assert_eq!(dirs.iter().collect::<HashSet<_>>().len(), dirs.len());
+    }
 
     #[test]
     fn test_path_normalization() {

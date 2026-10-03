@@ -603,20 +603,10 @@ mod tests {
         assert_eq!(overlapping, 0, "{overlapping} node pairs overlap");
     }
 
-    /// Coarse performance regression guard: a ~1000 node graph with a
-    /// realistic amount of edges must complete comfortably within a
-    /// generous time budget. This is deliberately loose (not a precise
-    /// benchmark) to avoid flaking on slow/shared CI runners -- it exists
-    /// to catch a regression that loses parallelization entirely or
-    /// introduces a worse complexity class, per the 500-1000+ file
-    /// performance requirement for this layout.
-    #[test]
-    // wall-clock budgets are meaningless under coverage instrumentation
-    #[cfg_attr(tarpaulin, ignore)]
-    fn layout_of_1000_nodes_completes_within_time_budget() {
-        let layout = ForceDirectedLayout::new(ForceDirectedConfig::default());
+    /// Builds a ring-linked graph of `n` nodes with the same shape the
+    /// performance guard measures.
+    fn ring_graph(n: usize) -> Graph<(), ()> {
         let mut graph: Graph<(), ()> = Graph::new();
-        let n = 1000;
         let nodes: Vec<_> = (0..n).map(|_| graph.add_node(())).collect();
         for i in 0..n {
             // Each node links to a handful of others, deterministically,
@@ -628,18 +618,55 @@ mod tests {
                 }
             }
         }
+        graph
+    }
 
-        let start = std::time::Instant::now();
-        let positions = layout.layout(&graph);
-        let elapsed = start.elapsed();
+    /// Coarse performance regression guard: a ~1000 node graph with a
+    /// realistic amount of edges must not cost far more than the same
+    /// simulation on a much smaller graph. This is deliberately loose (not a
+    /// precise benchmark) to avoid flaking on slow/shared CI runners: it
+    /// compares two sizes rather than the clock, because contention slows
+    /// both measurements by the same factor, whereas an absolute wall-clock
+    /// budget fails for reasons that have nothing to do with the layout. It
+    /// exists to catch a regression that loses parallelization entirely or
+    /// introduces a worse complexity class, per the 500-1000+ file
+    /// performance requirement for this layout.
+    #[test]
+    // wall-clock budgets are meaningless under coverage instrumentation
+    #[cfg_attr(tarpaulin, ignore)]
+    fn layout_of_1000_nodes_scales_with_graph_size() {
+        /// Node count whose quadratic pair count sets the expected ratio.
+        const SMALL: usize = 125;
+        const LARGE: usize = 1000;
+        /// How much worse than quadratic the large graph may be before the
+        /// guard trips. Repulsion cutoff scaling makes the measured ratio
+        /// land well below the quadratic one (around 30x for these
+        /// sizes), and slack absorbs a loaded machine.
+        const MAX_QUADRATIC_SLACK: f64 = 1.5;
 
-        assert_eq!(positions.len(), n);
-        for (x, y) in positions.values() {
+        let layout = ForceDirectedLayout::new(ForceDirectedConfig::default());
+        let expected_ratio = ((LARGE * LARGE) as f64) / ((SMALL * SMALL) as f64);
+
+        let measure = |n: usize| {
+            let graph = ring_graph(n);
+            let start = std::time::Instant::now();
+            let positions = layout.layout(&graph);
+            (start.elapsed().as_secs_f64(), positions)
+        };
+        let (small_time, small_positions) = measure(SMALL);
+        let (large_time, large_positions) = measure(LARGE);
+
+        assert_eq!(small_positions.len(), SMALL);
+        assert_eq!(large_positions.len(), LARGE);
+        for (x, y) in large_positions.values() {
             assert!(x.is_finite() && y.is_finite());
         }
+
+        let ratio = large_time / small_time;
         assert!(
-            elapsed.as_secs() < 10,
-            "1000-node layout took too long: {elapsed:?} (expected well under 10s)"
+            ratio <= expected_ratio * MAX_QUADRATIC_SLACK,
+            "{LARGE}-node layout cost {ratio:.1}x a {SMALL}-node one \
+             (expected about {expected_ratio:.1}x): {large_time:.3}s vs {small_time:.3}s"
         );
     }
 }
