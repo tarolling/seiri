@@ -21,7 +21,7 @@ eframe = { version = "0.36.2", default-features = false, features = [
     "wgpu_no_default_features",
     "x11",
 ] }
-egui = "0.36.2"
+egui = "0.37.0"
 wgpu = { version = "30", default-features = false, features = [
     "std",
     "parking_lot",
